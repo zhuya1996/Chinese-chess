@@ -1,0 +1,36 @@
+# ---- Python ----
+__pycache__/
+*.pyc
+
+# ---- 临时/草稿文件 ----
+__tmp_*.js
+.tmp_*.js
+__codex_tmp_*.js
+
+# ---- 运行时生成的配置 ----
+engine_config_*.txt
+
+# ---- Android 识别运行时数据 ----
+recognition_profiles/*/
+!recognition_profiles/.gitkeep
+
+# ---- C++ 编译产物（来自上游 Pikafish） ----
+**/*.o
+**/*.s
+src/.depend
+build
+CMakeLists.txt
+CMakeLists.txt.user
+src/pikafish*
+src/-lstdc++.res
+**/*.nnue
+
+# ---- 测试产物 ----
+src/test_output.txt
+
+# ---- IDE / 编辑器 ----
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
