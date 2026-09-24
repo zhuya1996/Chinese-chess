@@ -29,12 +29,10 @@ jobs:
         run: chmod +x android_app/gradlew
 
       - name: Build Debug APK
-        working-directory: android_app
-        run: ./gradlew assembleDebug --stacktrace
+        run: android_app/gradlew -p android_app assembleDebug --stacktrace
 
       - name: Build Release APK
-        working-directory: android_app
-        run: ./gradlew assembleRelease --stacktrace
+        run: android_app/gradlew -p android_app assembleRelease --stacktrace
 
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
