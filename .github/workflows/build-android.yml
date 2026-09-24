@@ -31,10 +31,7 @@ jobs:
       - name: Build APKs
         working-directory: android_app
         run: |
-          # 生成 Gradle Wrapper
-          gradle wrapper --gradle-version 8.1.0
           chmod +x gradlew
-          # 构建 APK
           ./gradlew assembleDebug assembleRelease --stacktrace
 
       - name: Upload Debug APK
