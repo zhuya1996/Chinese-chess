@@ -1,36 +1,55 @@
-# ---- Python ----
+# Python
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+*.egg-info/
 
-# ---- 临时/草稿文件 ----
-__tmp_*.js
-.tmp_*.js
-__codex_tmp_*.js
+# Logs
+*.log
+web_output*.log
+web_test.log
 
-# ---- 运行时生成的配置 ----
-engine_config_*.txt
-
-# ---- Android 识别运行时数据 ----
-recognition_profiles/*/
-!recognition_profiles/.gitkeep
-
-# ---- C++ 编译产物（来自上游 Pikafish） ----
-**/*.o
-**/*.s
-src/.depend
-build
-CMakeLists.txt
-CMakeLists.txt.user
-src/pikafish*
-src/-lstdc++.res
-**/*.nnue
-
-# ---- 测试产物 ----
-src/test_output.txt
-
-# ---- IDE / 编辑器 ----
+# IDE
 .vscode/
 .idea/
 *.swp
 *.swo
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Android
+*.apk
+*.ap_
+*.dex
+*.class
+bin/
+gen/
+out/
+.gradle/
+build/
+local.properties
+*.iml
+.externalNativeBuild
+.cxx/
+
+# 大型压缩包
+*.7z
+*.zip
+*.rar
+*.tar.gz
+
+# 临时文件
+*.tmp
+*.bak
+*.swp
 *~
+
+# 引擎目录（太大）
+Pikafish.*/

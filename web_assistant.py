@@ -5,7 +5,7 @@
 鍩轰簬 Flask 鎻愪緵 Web 鐣岄潰
 """
 
-from flask import Flask, render_template, jsonify, request, Response
+from flask import Flask, render_template, jsonify, request, Response, make_response
 import subprocess
 import threading
 import queue
@@ -22,6 +22,12 @@ try:
 except Exception as exc:
     AndroidRecognitionCompanion = None
     RECOGNITION_IMPORT_ERROR = str(exc)
+
+try:
+    from move_translator import uci_to_chinese
+except Exception:
+    def uci_to_chinese(move, fen=None):
+        return move
 
 app = Flask(__name__)
 
@@ -130,13 +136,13 @@ class ChessEngine:
                     self.is_ready = False
 
                 self.engine = subprocess.Popen(
-                    [str(self.engine_path)],
+                    [str(self.engine_path.absolute())],
                     stdin=subprocess.PIPE,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
-                    text=True,
+                    universal_newlines=True,  # Python 3.6 兼容
                     bufsize=1,
-                    cwd=str(self.engine_path.parent)
+                    cwd=str(self.engine_path.parent.absolute())
                 )
                 
                 threading.Thread(target=self._read_output, daemon=True).start()
@@ -845,25 +851,107 @@ def recognition_frame():
 
 @app.route('/api/multi_moves', methods=['POST'])
 def multi_moves():
-    """."""
-    """."""
+    """多个候选着法（添加中文转换）"""
     data = request.json or {}
     try:
         count = int(data.get('count', 5))
     except (TypeError, ValueError):
         count = 5
-    count = min(max(count, 1), 5)  # 闄愬埗鍦?-5涔嬮棿
+    count = min(max(count, 1), 5)
     depth = parse_depth(data.get('depth'), DEFAULT_ANALYZE_DEPTH)
-    
+
     result = engine.analyze(depth=depth, multipv=count)
-    
+
     if result.get('moves'):
+        # 获取当前 FEN
+        current_fen = engine.base_fen or "rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR w"
+
+        # 为每个着法添加中文转换
+        moves_with_chinese = []
+        for move in result['moves']:
+            move_chinese = uci_to_chinese(move['move'], current_fen)
+            moves_with_chinese.append({
+                'move': move['move'],
+                'move_chinese': move_chinese,  # 添加中文着法
+                'score': move.get('score'),
+                'pv': move.get('pv', [])
+            })
+
         return jsonify({
             'success': True,
-            'moves': result['moves'],
+            'moves': moves_with_chinese,
             'depth': result.get('depth', 0)
         })
     return jsonify({'success': False, 'message': '获取候选着法失败'})
+
+
+# ============================================================
+#  移动端 API（悬浮窗 App 专用）
+# ============================================================
+
+@app.route('/mobile')
+def mobile_page():
+    """移动端悬浮窗页面（禁用缓存）"""
+    response = make_response(render_template('mobile_float.html'))
+    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+    return response
+
+
+@app.route('/mobile/full')
+def mobile_full_page():
+    """移动端完整版页面（带棋盘）"""
+    response = make_response(render_template('mobile_full.html'))
+    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+    return response
+
+
+@app.route('/api/mobile/quick_suggest', methods=['POST'])
+def mobile_quick_suggest():
+    """移动端快速建议（简化版）"""
+    data = request.json or {}
+    fen = data.get('fen', '').strip()
+    depth = parse_depth(data.get('depth'), 15)  # 移动端默认深度15
+
+    # 如果提供了 FEN，设置局面
+    if fen and is_valid_xiangqi_fen(fen):
+        engine.set_fen(fen)
+
+    # 分析
+    result = engine.analyze(depth=depth)
+
+    if result['best_move']:
+        # 获取当前 FEN（用于着法转换）
+        current_fen = engine.base_fen or "rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR w"
+
+        # 转换为中文着法
+        chinese_move = uci_to_chinese(result['best_move'], current_fen)
+
+        return jsonify({
+            'success': True,
+            'best_move': result['best_move'],
+            'best_move_chinese': chinese_move,  # 添加中文着法
+            'score': result['score'],
+            'depth': result.get('depth', depth),
+            'pv': result.get('pv', [])[:3],  # 只返回前3步变化
+            'timestamp': time.strftime('%H:%M:%S')
+        })
+    return jsonify({'success': False, 'message': '分析失败'})
+
+
+@app.route('/api/mobile/status', methods=['GET'])
+def mobile_status():
+    """移动端状态检查（简化版）"""
+    state = engine.get_state()
+    return jsonify({
+        'success': True,
+        'engine_ready': state['is_ready'],
+        'timestamp': time.strftime('%H:%M:%S')
+    })
+
 
 if __name__ == '__main__':
     runtime = parse_runtime_args()

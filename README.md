@@ -1,176 +1,357 @@
-# 中国象棋 AI 助手
+# 🎯 中国象棋 AI 助手 - Android 悬浮窗版
 
-基于 [Pikafish](https://github.com/official-pikafish/Pikafish) 引擎（Stockfish 的象棋分支）构建的交互式中国象棋 AI 分析平台。提供 Flask Web 图形界面、命令行工具，以及可选的 Android 手机屏幕识别功能。
+> 在 JJ 象棋中实时显示 AI 建议，基于 Pikafish 引擎
 
-## 功能特性
+[![Build Status](https://github.com/li-xiao-kun/Chinese-chess/actions/workflows/build-android.yml/badge.svg)](https://github.com/li-xiao-kun/Chinese-chess/actions)
+[![Download APK](https://img.shields.io/badge/Download-APK-brightgreen?style=flat&logo=android)](https://github.com/li-xiao-kun/Chinese-chess/releases/latest)
+[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-- **交互式 Web 棋盘** — 点击选子、走棋，支持朱砂红/墨玉棋子、四种棋盘主题
-- **AI 引擎分析** — 集成 Pikafish UCI 引擎，支持可配置搜索深度（固定 / 区间模式）
-- **一键最佳着法建议** — 分析当前局面并显示最佳走法，支持一键落子
-- **多候选着法** — MultiPV 分析，展示 1-5 个候选着法及其评估值
-- **形势评估条** — 全局彩色评估条，直观显示红黑双方优劣
-- **着法记录** — 完整走棋历史，可在 Tab 面板中查看
-- **开局库参考** — 内置常见开局（中炮、屏风马、仙人指路等）
-- **硬件自适应** — 自动检测 CPU 核心数和内存，优化引擎参数
-- **自动提示通知** — 可选的自动提示模式，走棋后自动给出建议
-- **Android 屏幕识别** — 通过 ADB 连接手机，识别 JJ 象棋 App 画面并同步局面（可选）
-- **热部署模式** — 开发时自动重载模板，方便调试
-- **多种棋盘主题** — 古典木纹、米黄雅韵、乌木深沉、碧玉青翠
+---
 
-## 快速开始
+## 📱 快速下载（无需开发环境）
 
-### 1. 环境要求
+### 👉 [点击这里下载最新版 APK](https://github.com/li-xiao-kun/Chinese-chess/releases/latest)
 
-- Python 3.9+
-- 编译好的 `pikafish.exe` 和 `pikafish.nnue`（放在 `src/` 目录下）
-- Windows 用户可直接使用项目提供的 `.bat` 脚本
+**只需 3 步，5 分钟开始使用：**
 
-### 2. 安装 Python 依赖
+1. **下载 APK**（约 10MB）
+2. **安装到手机**（允许未知来源）
+3. **配置服务器地址**（输入电脑 IP）
 
-```bash
-# Windows（双击）
-安装依赖.bat
+> 💡 **完全无需 Android Studio、JDK 等开发工具！**
 
-# 或手动安装
-pip install -r requirements.txt
+---
+
+## ✨ 功能特点
+
+### 🎨 悬浮窗显示
+- ✅ 实时 AI 着法建议
+- ✅ 局势评估分数
+- ✅ 自由拖动位置
+- ✅ 渐变美观 UI
+
+### 🚀 智能分析
+- ✅ 基于 Pikafish 引擎
+- ✅ 可调节分析深度
+- ✅ 自动/手动刷新
+- ✅ 实时状态显示
+
+### 📱 完美兼容
+- ✅ JJ 象棋 App
+- ✅ 其他象棋应用
+- ✅ Android 7.0+
+- ✅ 无需 root
+
+---
+
+## 📥 下载与安装
+
+### 方法一：直接下载（推荐）
+
+1. **访问 Releases 页面**
+   
+   👉 https://github.com/li-xiao-kun/Chinese-chess/releases/latest
+
+2. **下载文件**
+   - `app-debug.apk` - 推荐，兼容性好（~10MB）
+
+3. **安装到手机**
+   - 允许"安装未知应用"
+   - 点击 APK 安装
+   - 允许悬浮窗权限
+
+### 方法二：手机直接扫码
+
+扫描下方二维码直接下载：
+
+```
+[ 二维码图片位置 ]
+- 使用手机浏览器扫描
+- 或微信"扫一扫"
 ```
 
-### 3. 获取引擎文件
+### 方法三：微信/QQ 传输
 
-**方式一：自行编译（需要 MSYS2 + MinGW64）**
+1. 电脑下载 APK
+2. 用微信/QQ 文件助手发送到手机
+3. 手机打开文件安装
 
-```powershell
-# 先安装 MSYS2（如未安装）
-.\setup_msys2.ps1
+---
 
-# 编译 Pikafish 引擎
-.\build_pikafish.ps1
+## 🚀 快速开始
 
-# 下载神经网络模型
-bash scripts/net.sh
-```
-
-**方式二：下载预编译版本**
-
-从 [Pikafish Releases](https://github.com/official-pikafish/Pikafish/releases) 下载对应平台的 `pikafish.exe`，并下载 `pikafish.nnue` 网络文件，将两者放入 `src/` 目录。
-
-### 4. 启动 Web 服务
+### 第一步：启动电脑后台（1 分钟）
 
 ```bash
-# Windows（双击）
-启动Web界面.bat
+# 方式 1: 双击运行
+启动服务_修复版.bat
 
-# 开发模式（模板改动后自动重启）
-启动Web界面_热部署.bat
-
-# 或手动启动
+# 方式 2: 命令行
 python web_assistant.py
-# 指定端口
-python web_assistant.py --port 8080
-# 热部署模式
-python web_assistant.py --hot-reload
+
+# 记下显示的 IP 地址，例如：
+# Running on http://192.168.1.100:5000/
 ```
 
-启动后在浏览器打开 **http://localhost:5000**。
+### 第二步：配置 Android App（1 分钟）
 
-## 使用说明
+1. 打开手机上的"象棋AI助手"
+2. 输入服务器地址：`http://192.168.1.100:5000`
+3. 点击"启动悬浮窗"
+4. 允许悬浮窗权限（首次需要）
 
-### Web 界面操作
+### 第三步：开始下棋（立即）
 
-1. **启动引擎** — 点击"启动引擎"按钮，等待状态显示"引擎就绪"
-2. **走棋** — 点击棋子选中，再点击目标位置（或可走位置的高亮圆点）
-3. **获取建议** — 点击"获取建议"按钮或按 `A` 键
-4. **应用建议** — 点击"建议并落子"按钮，AI 的最佳着法会自动执行
-5. **多个候选** — 点击"多个候选"按钮或按 `M` 键查看多个候选着法
-6. **撤销** — 点击"撤销"按钮或按 `Z` 键
-7. **翻转棋盘** — 点击"翻转"按钮切换视角
-8. **重置** — 点击"重置"按钮回到初始局面
+1. 打开 JJ 象棋 App
+2. 开始对局
+3. 悬浮窗自动显示 AI 建议
+4. 跟随建议下棋！
 
-右侧面板包含四个 Tab：
+**总耗时：不到 3 分钟** ⚡
 
-| Tab | 内容 |
-|-----|------|
-| 着法记录 | 完整走棋历史 |
-| 候选&评估 | 分析结果、评估值、PV 主线、形势评估条、棋谱讲解 |
-| 识别助手 | Android 手机屏幕识别（需要 ADB） |
-| 工具设置 | 搜索深度、AI 辅助模式、添加着法、FEN 工具、主题切换 |
+---
 
-### 命令行工具
+## 📊 系统要求
+
+### 手机端
+- Android 7.0 或更高版本
+- 约 50MB 存储空间
+- WiFi 网络连接
+
+### 电脑端
+- Windows / Mac / Linux
+- Python 3.6+
+- Pikafish 引擎（已包含）
+- 与手机同一 WiFi 网络
+
+---
+
+## 📖 使用文档
+
+### 用户文档
+- [云端下载APK使用指南.md](./云端下载APK使用指南.md) - 详细下载安装说明
+- [Android悬浮窗使用指南.md](./Android悬浮窗使用指南.md) - 功能使用说明
+- [快速开始_Android悬浮窗.md](./快速开始_Android悬浮窗.md) - 快速上手
+
+### 开发者文档
+- [GitHub自动构建设置指南.md](./GitHub自动构建设置指南.md) - 云端构建配置
+- [无需开发环境_云端方案总结.md](./无需开发环境_云端方案总结.md) - 技术方案
+- [Android悬浮窗方案总结.md](./Android悬浮窗方案总结.md) - 实现细节
+
+---
+
+## 🎥 效果预览
+
+### 悬浮窗界面
+
+```
+┌──────────────────┐
+│ 象棋AI助手   🟢  │  ← 在线状态
+│ 14:30:25        │  ← 当前时间
+├──────────────────┤
+│     炮8平5       │  ← AI 推荐着法
+│   评估: +0.45   │  ← 局势评分
+│ 深度: 18  14:30 │  ← 分析信息
+├──────────────────┤
+│ [🔄 刷新] [⚙️]  │  ← 操作按钮
+└──────────────────┘
+    ↑ 可拖动到任意位置
+```
+
+### 在 JJ 象棋中使用
+
+```
+📱 手机屏幕
+┌─────────────────────────┐
+│   JJ 象棋标题栏          │
+├─────────────────────────┤
+│  ┌───────────────┐      │ ← 悬浮窗
+│  │ 炮8平5 +0.45  │      │
+│  └───────────────┘      │
+│                         │
+│    [车][马][相]...      │ ← 棋盘
+│        ...              │
+└─────────────────────────┘
+```
+
+---
+
+## ❓ 常见问题
+
+<details>
+<summary><b>Q: 安装时提示"未知来源"怎么办？</b></summary>
+
+**A**: 需要允许安装未知应用：
+- 小米：设置 → 隐私保护 → 特殊权限 → 安装未知应用
+- 华为：设置 → 安全 → 更多安全设置 → 安装外部来源应用
+- OPPO/vivo：设置 → 安全 → 安装未知应用
+</details>
+
+<details>
+<summary><b>Q: 悬浮窗不显示怎么办？</b></summary>
+
+**A**: 需要授予悬浮窗权限：
+1. 长按 App 图标 → 应用信息
+2. 权限管理 → 显示悬浮窗 → 允许
+</details>
+
+<details>
+<summary><b>Q: 提示"网络错误"？</b></summary>
+
+**A**: 检查以下项目：
+1. 手机和电脑是否在同一 WiFi
+2. 电脑是否已启动后台服务
+3. 输入的 IP 地址是否正确
+4. 防火墙是否阻止了 5000 端口
+</details>
+
+<details>
+<summary><b>Q: 可以不用电脑吗？</b></summary>
+
+**A**: 目前需要电脑运行 Pikafish 引擎（性能强大）。未来计划：
+- [ ] 云端引擎版本（完全不需要电脑）
+- [ ] 手机内置轻量级引擎
+</details>
+
+<details>
+<summary><b>Q: 支持其他象棋 App 吗？</b></summary>
+
+**A**: 支持！悬浮窗可以在任何 App 上显示，包括：
+- ✅ JJ 象棋
+- ✅ 天天象棋
+- ✅ 其他象棋应用
+- ✅ 浏览器象棋网站
+</details>
+
+---
+
+## 🔧 技术架构
+
+```
+┌─────────────┐         WiFi          ┌─────────────┐
+│  Android    │ ←──────────────────→  │   电脑端    │
+│  悬浮窗 App │   HTTP REST API      │  Python后端 │
+└─────────────┘                       └─────────────┘
+      ↓                                      ↓
+   WebView                            Pikafish 引擎
+   (UI 渲染)                          (AI 计算)
+```
+
+### 核心组件
+- **前端**：Android WebView + HTML/CSS/JS
+- **后端**：Python Flask + REST API
+- **引擎**：Pikafish (Stockfish for Xiangqi)
+- **通信**：HTTP/JSON over WiFi
+
+---
+
+## 🛠️ 开发相关
+
+### 本地构建（可选）
+
+如果你想自己编译 APK：
 
 ```bash
-# 快速单步分析（可选参数：FEN 和深度）
-python quick_analyze.py "rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR w" 20
+# 1. 克隆仓库
+git clone https://github.com/li-xiao-kun/Chinese-chess.git
 
-# 交互式 CLI 模式
-python chess_assistant.py
-# 进入后可用命令：start / move e2e4 / suggest / analyze 20 / fen <FEN> / quit
+# 2. 打开 Android Studio
+# File → Open → 选择 android_app 目录
+
+# 3. 构建
+./gradlew assembleDebug
+
+# 4. 安装
+adb install app/build/outputs/apk/debug/app-debug.apk
 ```
 
-### Android 屏幕识别（可选）
+### 云端自动构建
 
-如需使用手机屏幕识别功能：
+推送标签即可触发自动构建：
 
-1. 安装 [ADB](https://developer.android.com/studio/command-line/adb) 并确保 `adb devices` 能识别手机
-2. 手机打开 JJ 象棋 App，进入标准棋盘界面
-3. 在 Web 界面的"识别助手"Tab 中启动识别
-4. 按提示进行四角校准
-5. 识别成功后，系统会自动同步局面并给出 AI 建议
+```bash
+git tag -a v1.1.0 -m "新版本"
+git push origin v1.1.0
 
-## 项目结构
-
-```
-├── web_assistant.py          # 主 Web 应用（Flask + API 路由）
-├── chess_assistant.py        # 命令行交互式助手 / 引擎接口
-├── engine_optimizer.py       # 硬件检测 + 引擎参数优化
-├── opening_book.py           # 中国象棋开局知识库
-├── recognition_companion.py  # Android 手机屏幕识别模块
-├── quick_analyze.py          # CLI 快速单次分析工具
-├── test_assistant.py         # 基础功能测试
-├── requirements.txt          # Python 依赖
-├── 启动Web界面.bat            # Windows 启动脚本
-├── 启动Web界面_热部署.bat     # Windows 热部署启动脚本
-├── 安装依赖.bat              # Windows 依赖安装脚本
-├── 快速分析.bat              # Windows 快速分析启动脚本
-├── build_pikafish.ps1        # Pikafish 引擎编译脚本
-├── setup_msys2.ps1           # MSYS2 工具链安装脚本
-├── templates/
-│   └── chess.html            # Web 界面（单页应用）
-├── src/                      # Pikafish C++ 引擎源代码
-│   ├── Makefile
-│   └── *.cpp / *.h
-├── recognition_profiles/     # 识别校准数据（运行时生成）
-├── scripts/                  # 构建辅助脚本
-└── tests/                    # 引擎测试脚本
+# 5-10 分钟后，APK 自动出现在 Releases 页面
 ```
 
-## 依赖项
+---
 
-### Python 包
+## 📈 版本历史
 
-| 包 | 用途 |
-|---|------|
-| Flask | Web 框架 |
-| Werkzeug | WSGI 工具库 |
-| numpy | 数组运算（识别模块） |
-| opencv-python | 图像处理（识别模块） |
-| Pillow | 图像处理（识别模块） |
-| psutil | 硬件信息检测（优化模块） |
+### v1.0.0 (2024-09-24)
+- ✅ 初始发布
+- ✅ Android 悬浮窗功能
+- ✅ 实时 AI 建议
+- ✅ 局势评估显示
+- ✅ 可拖动悬浮窗
+- ✅ 云端自动构建
 
-### 系统工具（可选）
+### 未来计划
+- [ ] 支持多候选着法显示
+- [ ] 添加历史记录功能
+- [ ] 支持主题切换
+- [ ] 添加语音播报
+- [ ] 优化网络重连机制
+- [ ] 云端引擎版本
 
-| 工具 | 用途 |
-|------|------|
-| ADB | Android 手机屏幕识别 |
-| MSYS2 + MinGW64 | Windows 下编译 Pikafish 引擎 |
+---
 
-## 许可证
+## 🤝 贡献
 
-本项目基于 GPL v3 许可证开源，详见 [Copying.txt](Copying.txt)。
+欢迎提交 Issue 和 Pull Request！
 
-Pikafish 引擎源代码位于 `src/` 目录，基于 Stockfish 的象棋适配版本，同样遵循 GPL v3 许可证。
+### 报告问题
+- [提交 Bug](https://github.com/li-xiao-kun/Chinese-chess/issues/new?labels=bug)
+- [功能建议](https://github.com/li-xiao-kun/Chinese-chess/issues/new?labels=enhancement)
 
-## 致谢
+### 参与开发
+```bash
+# 1. Fork 本仓库
+# 2. 创建特性分支
+git checkout -b feature/新功能
 
-- [Pikafish](https://github.com/official-pikafish/Pikafish) — 强大的中国象棋 UCI 引擎
-- [Stockfish](https://stockfishchess.org/) — 世界顶级国际象棋引擎，Pikafish 的基石
-- Pika Xiangqi Zero 项目 — 提供 NNUE 训练数据
+# 3. 提交更改
+git commit -m "添加新功能"
+
+# 4. 推送到分支
+git push origin feature/新功能
+
+# 5. 创建 Pull Request
+```
+
+---
+
+## 📄 开源协议
+
+本项目采用 MIT 协议开源。
+
+---
+
+## 🙏 致谢
+
+- [Pikafish](https://github.com/official-pikafish/Pikafish) - 强大的中国象棋引擎
+- [Stockfish](https://stockfishchess.org/) - 原始国际象棋引擎
+- [JJ 象棋](http://www.jj.cn/) - 测试平台
+
+---
+
+## 💬 联系方式
+
+- GitHub Issues: https://github.com/li-xiao-kun/Chinese-chess/issues
+- 项目主页: https://github.com/li-xiao-kun/Chinese-chess
+
+---
+
+## 📱 立即下载
+
+**无需开发环境，2 分钟安装，立即使用！**
+
+👉 [下载最新版 APK](https://github.com/li-xiao-kun/Chinese-chess/releases/latest)
+
+---
+
+**⭐ 觉得有用？给项目一个 Star 吧！**
+
+Made with ❤️ by li-xiao-kun
