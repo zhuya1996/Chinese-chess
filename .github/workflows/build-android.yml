@@ -13,7 +13,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04  # 使用固定版本避免迁移问题
 
     steps:
       - name: Checkout code
@@ -25,13 +25,13 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
 
       - name: Build APKs
+        working-directory: android_app
         run: |
-          cd android_app
-          # 使用系统 Gradle 生成 wrapper
+          # 生成 Gradle Wrapper
           gradle wrapper --gradle-version 8.1.0
           chmod +x gradlew
           # 构建 APK
