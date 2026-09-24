@@ -25,25 +25,24 @@ jobs:
           java-version: '11'
           distribution: 'temurin'
 
-      - name: Validate Gradle wrapper
-        uses: gradle/wrapper-validation-action@v1
-
       - name: Setup Gradle
         uses: gradle/gradle-build-action@v2
-        with:
-          gradle-version: 7.5
+
+      - name: Generate Gradle Wrapper
+        run: |
+          cd android_app
+          gradle wrapper --gradle-version 7.5
+          chmod +x gradlew
 
       - name: Build Debug APK
         run: |
           cd android_app
-          gradle wrapper
-          chmod +x gradlew
-          ./gradlew assembleDebug --stacktrace
+          ./gradlew assembleDebug --stacktrace --no-daemon
 
       - name: Build Release APK (unsigned)
         run: |
           cd android_app
-          ./gradlew assembleRelease --stacktrace
+          ./gradlew assembleRelease --stacktrace --no-daemon
 
       - name: Upload Debug APK
         uses: actions/upload-artifact@v3
