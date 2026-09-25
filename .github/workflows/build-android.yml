@@ -28,18 +28,19 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x android_app/gradlew
 
-      - name: Build Debug APK
-        run: android_app/gradlew -p android_app assembleDebug --stacktrace
-
-      - name: Build Release APK
-        run: android_app/gradlew -p android_app assembleRelease --stacktrace
+      - name: Build Debug and Release APKs
+        run: |
+          cd android_app
+          ./gradlew assembleDebug assembleRelease --stacktrace --no-daemon
 
       - name: List generated APK files
         run: |
           echo "=== Listing APK files ==="
-          find android_app/app/build/outputs/apk -name "*.apk" -type f
-          ls -lh android_app/app/build/outputs/apk/debug/ || echo "Debug directory not found"
-          ls -lh android_app/app/build/outputs/apk/release/ || echo "Release directory not found"
+          find android_app/app/build/outputs/apk -name "*.apk" -type f || echo "No APK files found"
+          echo "=== Debug directory ==="
+          ls -lh android_app/app/build/outputs/apk/debug/ 2>/dev/null || echo "Debug directory not found"
+          echo "=== Release directory ==="
+          ls -lh android_app/app/build/outputs/apk/release/ 2>/dev/null || echo "Release directory not found"
 
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
