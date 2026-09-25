@@ -7,10 +7,13 @@ cd android_app
 echo "=== Making gradlew executable ==="
 chmod +x gradlew
 
-echo "=== Building Debug APK ==="
-./gradlew assembleDebug --stacktrace --no-daemon
+echo "=== Running gradlew tasks to check available tasks ==="
+./gradlew tasks --all | grep -i assemble | head -20
 
-echo "=== Building Release APK ==="
-./gradlew assembleRelease --stacktrace --no-daemon
+echo "=== Building Debug APK with explicit command ==="
+./gradlew :app:assembleDebug --stacktrace --no-daemon
+
+echo "=== Building Release APK with explicit command ==="
+./gradlew :app:assembleRelease --stacktrace --no-daemon
 
 echo "=== Build completed ==="
