@@ -34,6 +34,13 @@ jobs:
       - name: Build Release APK
         run: android_app/gradlew -p android_app assembleRelease --stacktrace
 
+      - name: List generated APK files
+        run: |
+          echo "=== Listing APK files ==="
+          find android_app/app/build/outputs/apk -name "*.apk" -type f
+          ls -lh android_app/app/build/outputs/apk/debug/ || echo "Debug directory not found"
+          ls -lh android_app/app/build/outputs/apk/release/ || echo "Release directory not found"
+
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
         with:
