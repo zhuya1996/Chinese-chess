@@ -25,13 +25,11 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Make gradlew executable
-        run: chmod +x android_app/gradlew
+      - name: Make build script executable
+        run: chmod +x build-apk.sh
 
-      - name: Build Debug and Release APKs
-        run: |
-          cd android_app
-          ./gradlew assembleDebug assembleRelease --stacktrace --no-daemon
+      - name: Build APKs
+        run: ./build-apk.sh
 
       - name: List generated APK files
         run: |
