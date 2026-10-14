@@ -157,6 +157,8 @@ public final class XiangqiRecognizer {
 
         char[][] raw = new char[Position.ROWS][Position.COLS];
         double confidence = classifyBoard(canonical, raw);
+        // v1.8：红黑改由像素颜色决定（灰度 NCC 分不清 炮/砲 这类同形异色字）
+        applyColorCorrection(frame, raw);
         r.confidence = confidence;
 
         // 自动判断屏幕下方是哪种颜色（即通常我所在的一侧）
@@ -344,6 +346,162 @@ public final class XiangqiRecognizer {
         return n > 0 ? total / n : 0;
     }
 
+    // ---------------------------------------------------------------- 颜色纠正（v1.8）
+
+    /** 红度采样的暂存区（懒分配，避免每帧制造 GC 压力）。 */
+    private float[] colorLum;
+    private float[] colorRed;
+    private float[] colorSort;
+
+    /**
+     * v1.8：灰度 NCC 分不清「炮/砲」「傌/馬」这类同形异色字，红黑判定改由
+     * 像素颜色决定。对全部有子点采样「暗像素红度」R-(G+B)/2（暗像素≈字迹），
+     * 做 2-means 聚成两簇：高红度簇 = 红方。真机实测分离度 44（黑≈24 / 红≈68）。
+     * 两簇分不开（异常帧/特殊主题）或取值落在分界带内的点，保持模板原判定。
+     */
+    private void applyColorCorrection(Frame frame, char[][] board) {
+        double[] h = canonicalToScreen;
+        if (h == null || frame == null || frame.argb == null) {
+            return;
+        }
+        float[] corners = profile.absoluteCorners(frame.width, frame.height);
+        float cellH = ((corners[5] - corners[1]) + (corners[7] - corners[3])) / 18f;
+        float cellW = ((corners[2] - corners[0]) + (corners[6] - corners[4])) / 16f;
+        float half = 0.45f * Math.min(cellW, cellH);
+        if (half < 8) {
+            return;
+        }
+
+        double[] vals = new double[Position.ROWS * Position.COLS];
+        int[] pr = new int[vals.length];
+        int[] pc = new int[vals.length];
+        int n = 0;
+        for (int r = 0; r < Position.ROWS; r++) {
+            for (int c = 0; c < Position.COLS; c++) {
+                if (board[r][c] == Position.EMPTY) {
+                    continue;
+                }
+                float[] sp = canonicalToScreenPt(c * CELL, r * CELL);
+                if (sp == null) {
+                    return;
+                }
+                double v = sampleRedness(frame, sp[0], sp[1], half);
+                if (!Double.isNaN(v)) {
+                    vals[n] = v;
+                    pr[n] = r;
+                    pc[n] = c;
+                    n++;
+                }
+            }
+        }
+        if (n < 4) {
+            return;
+        }
+
+        double lo = vals[0], hi = vals[0];
+        for (int i = 1; i < n; i++) {
+            if (vals[i] < lo) lo = vals[i];
+            if (vals[i] > hi) hi = vals[i];
+        }
+        if (hi - lo < 12) {
+            return;
+        }
+        double c1 = lo + (hi - lo) * 0.33, c2 = lo + (hi - lo) * 0.67;
+        for (int it = 0; it < 12; it++) {
+            double s1 = 0, s2 = 0;
+            int n1 = 0, n2 = 0;
+            for (int i = 0; i < n; i++) {
+                if (Math.abs(vals[i] - c1) <= Math.abs(vals[i] - c2)) {
+                    s1 += vals[i];
+                    n1++;
+                } else {
+                    s2 += vals[i];
+                    n2++;
+                }
+            }
+            if (n1 > 0) c1 = s1 / n1;
+            if (n2 > 0) c2 = s2 / n2;
+        }
+        if (c1 > c2) {
+            double t = c1;
+            c1 = c2;
+            c2 = t;
+        }
+        if (c2 - c1 < 12) {
+            return;
+        }
+        double mid = (c1 + c2) / 2;
+        double dead = 0.15 * (c2 - c1);   // 分界死区：拿不准就信模板
+        for (int i = 0; i < n; i++) {
+            char cur = board[pr[i]][pc[i]];
+            char shape = Character.toUpperCase(cur);
+            if (Math.abs(vals[i] - mid) < dead) {
+                continue;   // 模糊带内保持模板判定
+            }
+            board[pr[i]][pc[i]] = vals[i] >= mid ? shape : Character.toLowerCase(shape);
+        }
+    }
+
+    /** 采样一点附近「字迹暗像素」的平均红度 R-(G+B)/2；失败返回 NaN。 */
+    private double sampleRedness(Frame f, double cx, double cy, float half) {
+        int x0 = Math.max(0, (int) Math.floor(cx - half));
+        int y0 = Math.max(0, (int) Math.floor(cy - half));
+        int x1 = Math.min(f.width - 1, (int) Math.ceil(cx + half));
+        int y1 = Math.min(f.height - 1, (int) Math.ceil(cy + half));
+        int w = x1 - x0 + 1;
+        int hgt = y1 - y0 + 1;
+        int cnt = w * hgt;
+        if (cnt < 64) {
+            return Double.NaN;
+        }
+        if (colorLum == null || colorLum.length < cnt) {
+            int size = Math.max(cnt, 160 * 160);
+            colorLum = new float[size];
+            colorRed = new float[size];
+            colorSort = new float[size];
+        }
+        int k = 0;
+        for (int y = y0; y <= y1; y++) {
+            int base = y * f.rowStride;
+            for (int x = x0; x <= x1; x++) {
+                int c = f.argb[base + x];
+                int R = (c >> 16) & 0xFF;
+                int G = (c >> 8) & 0xFF;
+                int B = c & 0xFF;
+                colorLum[k] = 0.299f * R + 0.587f * G + 0.114f * B;
+                colorRed[k] = R - (G + B) / 2f;
+                k++;
+            }
+        }
+        System.arraycopy(colorLum, 0, colorSort, 0, cnt);
+        java.util.Arrays.sort(colorSort, 0, cnt);
+        float darkCut = colorSort[(int) (cnt * 0.3)];
+        double sum = 0;
+        int m = 0;
+        for (int i = 0; i < cnt; i++) {
+            if (colorLum[i] <= darkCut) {
+                sum += colorRed[i];
+                m++;
+            }
+        }
+        return m > 0 ? sum / m : Double.NaN;
+    }
+
+    /** canonical 坐标 → 截屏帧坐标（不做红黑翻转）。 */
+    private float[] canonicalToScreenPt(double cx, double cy) {
+        double[] h = canonicalToScreen;
+        if (h == null) {
+            return null;
+        }
+        double denom = h[6] * cx + h[7] * cy + h[8];
+        if (Math.abs(denom) < 1e-9) {
+            return null;
+        }
+        double x = (h[0] * cx + h[1] * cy + h[2]) / denom;
+        double y = (h[3] * cx + h[4] * cy + h[5]) / denom;
+        return new float[]{(float) x, (float) y};
+    }
+
     // ------------------------------------------------------------ 标定相关
 
     /**
@@ -417,6 +575,7 @@ public final class XiangqiRecognizer {
         // 用真实识别结果自动判断屏幕下方是红还是黑（比让用户手选更可靠）
         char[][] raw = new char[Position.ROWS][Position.COLS];
         classifyBoard(canonical, raw);
+        applyColorCorrection(frame, raw);
         String detected = detectBottomSide(raw);
         target.bottomSide = detected != null ? detected
                 : (bottomSideHint == null ? "red" : bottomSideHint);

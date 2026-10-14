@@ -150,7 +150,11 @@ public final class OverlayService extends Service {
             android.util.DisplayMetrics dm = getResources().getDisplayMetrics();
             int screenH = dm.heightPixels;
             float top = Math.min(Math.min(c[1], c[3]), Math.min(c[5], c[7]));
-            int boardTopPx = (int) (top * screenH) - 24;
+            float bottom = Math.max(Math.max(c[1], c[3]), Math.max(c[5], c[7]));
+            // v1.8：棋子以交点为圆心，半径约半个格高——面板必须让开
+            // 「上沿 - 0.65 格」以上，否则仍会蹭掉顶行棋子的上半截
+            float chPx = (bottom - top) / 9f * screenH;
+            int boardTopPx = (int) (top * screenH - 0.65f * chPx);
             final int limit = boardTopPx;
             main.post(() -> {
                 if (overlay != null) {
