@@ -235,6 +235,14 @@
                 android:enabled="false"
                 android:text="@string/action_stop" />
 
+            <Button
+                android:id="@+id/btnDiag"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="诊断信息（不显示 / 不工作时点这里）"
+                android:textSize="13sp" />
+
             <TextView
                 android:id="@+id/tvRuntime"
                 android:layout_width="match_parent"

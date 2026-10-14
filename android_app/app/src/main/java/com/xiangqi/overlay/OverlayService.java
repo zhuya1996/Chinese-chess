@@ -59,6 +59,23 @@ public final class OverlayService extends Service {
     /** 给标定界面用的最新截图。 */
     private volatile Bitmap calibFrame;
 
+    /** 最近一次失败原因，供诊断面板显示。 */
+    private volatile String lastError;
+
+    public String getLastError() {
+        return lastError;
+    }
+
+    /** 截屏管线是否真的在跑（区别于「服务对象存在」）。 */
+    public boolean isCaptureRunning() {
+        return capture != null && capture.isRunning();
+    }
+
+    /** 悬浮窗是否真的挂到屏幕上了。 */
+    public boolean isOverlayShown() {
+        return overlay != null && overlay.isShown();
+    }
+
     public boolean isCalibrated() {
         return profile.isCalibrated();
     }
@@ -112,13 +129,35 @@ public final class OverlayService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        startForegroundCompat();
-        if (intent != null && intent.hasExtra(EXTRA_RESULT_CODE)) {
+        // 系统把服务拉起来但没带录屏授权（START_STICKY 重启的情形）时，
+        // 这个实例其实什么都做不了。必须主动退出，否则会留下一个
+        // "对象存在、状态却不是运行中" 的幽灵实例，让主界面误判成已启动。
+        if (intent == null || !intent.hasExtra(EXTRA_RESULT_CODE)) {
+            stopSelf();
+            return START_NOT_STICKY;
+        }
+        try {
+            startForegroundCompat();
             int code = intent.getIntExtra(EXTRA_RESULT_CODE, -1);
             Intent data = intent.getParcelableExtra(EXTRA_DATA);
             beginCapture(code, data);
+        } catch (Throwable t) {
+            fail("服务启动失败：" + describe(t));
         }
-        return START_STICKY;
+        return START_NOT_STICKY;
+    }
+
+    /** 统一的失败出口：记录原因、提示用户、并把服务关掉。 */
+    private void fail(String reason) {
+        lastError = reason;
+        statusToast(reason);
+        stopSelf();
+    }
+
+    private static String describe(Throwable t) {
+        String msg = t.getMessage();
+        String name = t.getClass().getSimpleName();
+        return msg == null ? name : name + "：" + msg;
     }
 
     @Override
@@ -181,18 +220,19 @@ public final class OverlayService extends Service {
         }
         String err = capture.start(this, resultCode, data);
         if (err != null) {
-            statusToast(err);
-            stopSelf();
+            fail(err);
             return;
         }
         if (!engine.isRunning()) {
             if (!DeviceCompat.engineSupported()) {
-                statusToast("引擎需要 Android 10 及以上，当前系统 "
-                        + DeviceCompat.androidVersion() + " 无法运行");
+                lastError = "引擎需要 Android 10 及以上，当前系统 "
+                        + DeviceCompat.androidVersion() + " 无法运行";
+                statusToast(lastError);
             } else {
                 String engineErr = engine.start(this);
                 if (engineErr != null) {
-                    statusToast("引擎启动失败：" + engineErr);
+                    lastError = "引擎启动失败：" + engineErr;
+                    statusToast(lastError);
                 }
             }
         }
@@ -223,6 +263,9 @@ public final class OverlayService extends Service {
         if (!overlay.isShown()) {
             String err = overlay.show();
             if (err != null) {
+                // 悬浮窗没挂上：这不是致命错误（截屏和识别仍在跑），
+                // 但用户什么都看不到，所以必须明确告知并记入诊断。
+                lastError = err;
                 statusToast(err);
             }
         }

@@ -65,14 +65,14 @@ public final class OverlayController {
         return shown;
     }
 
-    /** 显示悬浮窗。返回 null 成功，否则为失败原因。 */
+    /** 显示悬浮窗。返回 null 成功，否则为需要告知用户的原因。 */
     public String show() {
         if (shown) {
             return null;
         }
         wm = (WindowManager) context.getSystemService(Context.WINDOW_SERVICE);
         if (wm == null) {
-            return "无法获取窗口服务";
+            return "无法获取窗口服务，悬浮窗无法显示";
         }
 
         int type = DeviceCompat.overlayWindowType();
@@ -81,6 +81,9 @@ public final class OverlayController {
         Context themed = new ContextThemeWrapper(context, R.style.AppTheme);
         LayoutInflater inflater = LayoutInflater.from(themed);
 
+        // ---- 箭头层：全屏、触摸完全穿透，只负责画落点标记 ----
+        // 这一层失败不算致命：面板还能给文字建议，所以只记下原因、不中断。
+        String arrowError = null;
         arrow = new ArrowView(themed);
         arrowParams = new WindowManager.LayoutParams(
                 WindowManager.LayoutParams.MATCH_PARENT,
@@ -90,11 +93,13 @@ public final class OverlayController {
                 PixelFormat.TRANSLUCENT);
         try {
             wm.addView(arrow, arrowParams);
-        } catch (Exception e) {
+        } catch (Throwable e) {
             arrow = null;
-            return "无法显示悬浮窗（可能是权限未开启）：" + e.getMessage();
+            arrowError = describeFailure("箭头层", e);
         }
 
+        // ---- 面板层：可拖动、不抢焦点，面板以外触摸穿透 ----
+        // 这一层是核心，失败就意味着用户什么都看不到。
         panel = inflater.inflate(R.layout.overlay_panel, null);
         panelParams = new WindowManager.LayoutParams(
                 WindowManager.LayoutParams.WRAP_CONTENT,
@@ -107,16 +112,49 @@ public final class OverlayController {
         panelParams.y = 140;
         try {
             wm.addView(panel, panelParams);
-        } catch (Exception e) {
-            wm.removeView(arrow);
-            arrow = null;
-            return "无法显示悬浮窗（可能是权限未开启）：" + e.getMessage();
+        } catch (Throwable e) {
+            panel = null;
+            if (arrow != null) {
+                try {
+                    wm.removeView(arrow);
+                } catch (Throwable ignored) {
+                }
+                arrow = null;
+            }
+            return describeFailure("主面板", e);
         }
 
         bindViews();
         setupDrag();
         shown = true;
-        return null;
+        return arrowError;
+    }
+
+    /**
+     * 把添加窗口时的异常翻译成用户能照着做的提示。
+     * <p>
+     * 这里之所以要区分异常类型，是因为「悬浮窗不显示」在国产 ROM 上有好几种
+     * 完全不同的原因，笼统说一句"权限未开启"会让用户无从下手。
+     */
+    private static String describeFailure(String layer, Throwable e) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("悬浮窗").append(layer).append("未能显示");
+        if (e instanceof WindowManager.BadTokenException) {
+            sb.append("：被系统拒绝。请确认已开启「显示在其他应用上层」");
+            if (DeviceCompat.isXiaomi()) {
+                sb.append("；小米/红米还需额外打开「后台弹出界面」");
+            }
+            sb.append("。可点下方「诊断信息」查看检测结果。");
+        } else if (e instanceof SecurityException) {
+            sb.append("：系统拒绝添加窗口，悬浮窗权限未真正生效。");
+        } else {
+            String msg = e.getMessage();
+            sb.append("：").append(e.getClass().getSimpleName());
+            if (msg != null && msg.length() > 0) {
+                sb.append(' ').append(msg);
+            }
+        }
+        return sb.toString();
     }
 
     private void bindViews() {

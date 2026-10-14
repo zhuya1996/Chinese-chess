@@ -2,6 +2,9 @@ package com.xiangqi.overlay;
 
 import android.Manifest;
 import android.app.Activity;
+import android.app.AlertDialog;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.media.projection.MediaProjectionManager;
@@ -14,14 +17,20 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 /**
- * 主界面：按「① 开权限 → ② 标定 → ③ 启动」的顺序引导用户完成配置。
+ * 主界面。
+ * <p>
+ * 界面设计上的两条教训（都是真机反馈后改的）：
+ * <ul>
+ *   <li><b>按钮绝不用「检测结果」来禁用。</b> 国产 ROM 上权限检测会误报，
+ *       一旦据此禁用按钮，用户就会遇到「明明授权了却点不动、也不知道为什么」。</li>
+ *   <li><b>不把操作顺序甩给用户。</b> 标定本来必须先启动服务，现在点「标定」
+ *       会自动先把服务拉起来，用户不需要理解这个先后关系。</li>
+ * </ul>
  */
 public final class MainActivity extends Activity {
 
     private static final int REQ_PROJECTION = 1001;
-    private static final int REQ_OVERLAY = 1002;
     private static final int REQ_NOTIF = 1003;
-    private static final int REQ_BATTERY = 1004;
 
     private Button btnOverlay;
     private Button btnNotif;
@@ -29,13 +38,36 @@ public final class MainActivity extends Activity {
     private Button btnCalibrate;
     private Button btnStart;
     private Button btnStop;
+    private Button btnDiag;
     private TextView tvRuntime;
     private TextView tvAbiWarning;
-    private TextView tvSetupHint;
 
     private final Handler main = new Handler(Looper.getMainLooper());
     private final Runnable refreshTask = this::refresh;
-    private boolean running;
+    private boolean showing;
+
+    /** 用户点「标定」但服务还没起来时置位，服务起来后自动进入标定界面。 */
+    private boolean pendingCalibration;
+    private int calibWaitTries;
+
+    private final Runnable calibWaitTask = new Runnable() {
+        @Override
+        public void run() {
+            OverlayService s = OverlayService.get();
+            if (s != null && s.isActive() && s.isCaptureRunning()) {
+                pendingCalibration = false;
+                openCalibration();
+                return;
+            }
+            if (++calibWaitTries < 15) {
+                main.postDelayed(this, 600);
+                return;
+            }
+            pendingCalibration = false;
+            toast("启动超时。请点「启动悬浮窗辅助」看具体提示，"
+                    + "或用下方「诊断信息」把结果反馈给开发者。");
+        }
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -48,39 +80,25 @@ public final class MainActivity extends Activity {
         btnCalibrate = findViewById(R.id.btnCalibrate);
         btnStart = findViewById(R.id.btnStart);
         btnStop = findViewById(R.id.btnStop);
+        btnDiag = findViewById(R.id.btnDiag);
         tvRuntime = findViewById(R.id.tvRuntime);
         tvAbiWarning = findViewById(R.id.tvAbiWarning);
-        tvSetupHint = findViewById(R.id.tvSetupHint);
 
+        // 权限按钮始终可点：即使检测显示已开启，也允许再进设置页确认一次。
         btnOverlay.setOnClickListener(v -> {
             if (DeviceCompat.canDrawOverlays(this)) {
-                Toast.makeText(this, "悬浮窗权限已开启", Toast.LENGTH_SHORT).show();
-                return;
+                toast("检测显示悬浮窗权限已开启。若悬浮窗仍不出现，"
+                        + "请检查系统的「后台弹出界面」开关（小米/红米需要）。");
             }
-            startActivityForResult(DeviceCompat.overlaySettingsIntent(this), REQ_OVERLAY);
+            DeviceCompat.openOverlaySettings(this);
         });
+
         btnNotif.setOnClickListener(v -> requestNotificationPermission());
-        btnBattery.setOnClickListener(v -> {
-            Intent i = new Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
-                    android.net.Uri.parse("package:" + getPackageName()));
-            try {
-                startActivityForResult(i, REQ_BATTERY);
-            } catch (Exception e) {
-                startActivity(DeviceCompat.appDetailsIntent(this));
-            }
-        });
+        btnBattery.setOnClickListener(v ->
+                DeviceCompat.requestIgnoreBatteryOptimizations(this));
 
-        btnCalibrate.setOnClickListener(v -> {
-            OverlayService s = OverlayService.get();
-            if (s == null || !s.isActive()) {
-                Toast.makeText(this, "请先点「启动悬浮窗辅助」，授权录屏后才能截图标定",
-                        Toast.LENGTH_LONG).show();
-                return;
-            }
-            startActivity(new Intent(this, CalibrationActivity.class));
-        });
-
-        btnStart.setOnClickListener(v -> requestProjectionAndStart());
+        btnCalibrate.setOnClickListener(v -> calibrate());
+        btnStart.setOnClickListener(v -> startAssist());
         btnStop.setOnClickListener(v -> {
             OverlayService s = OverlayService.get();
             if (s != null) {
@@ -88,6 +106,7 @@ public final class MainActivity extends Activity {
             }
             refresh();
         });
+        btnDiag.setOnClickListener(v -> showDiagnostics());
 
         refresh();
     }
@@ -95,72 +114,157 @@ public final class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
-        running = true;
-        main.postDelayed(refreshTask, 500);
+        showing = true;
         refresh();
     }
 
     @Override
     protected void onPause() {
         super.onPause();
-        running = false;
+        showing = false;
         main.removeCallbacks(refreshTask);
     }
 
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode == REQ_PROJECTION) {
-            if (resultCode != RESULT_OK || data == null) {
-                Toast.makeText(this, "未授权录屏，无法识别棋局", Toast.LENGTH_LONG).show();
-                return;
-            }
-            Intent svc = new Intent(this, OverlayService.class);
-            svc.putExtra(OverlayService.EXTRA_RESULT_CODE, resultCode);
-            svc.putExtra(OverlayService.EXTRA_DATA, data);
+        if (requestCode != REQ_PROJECTION) {
+            return;
+        }
+        if (resultCode != RESULT_OK || data == null) {
+            pendingCalibration = false;
+            toast("未授权录屏，无法识别棋局。悬浮窗辅助需要录屏权限才能读取棋盘。");
+            return;
+        }
+        Intent svc = new Intent(this, OverlayService.class);
+        svc.putExtra(OverlayService.EXTRA_RESULT_CODE, resultCode);
+        svc.putExtra(OverlayService.EXTRA_DATA, data);
+        try {
             if (Build.VERSION.SDK_INT >= 26) {
                 startForegroundService(svc);
             } else {
                 startService(svc);
             }
-            Toast.makeText(this, R.string.toast_started, Toast.LENGTH_LONG).show();
+        } catch (Throwable t) {
+            toast("启动后台服务失败：" + t.getMessage());
+            pendingCalibration = false;
+            return;
+        }
+        if (pendingCalibration) {
+            calibWaitTries = 0;
+            main.postDelayed(calibWaitTask, 600);
+        } else {
+            toast(getString(R.string.toast_started));
         }
         refresh();
     }
 
-    private void requestProjectionAndStart() {
-        if (DeviceCompat.is32BitOnly()) {
-            Toast.makeText(this, R.string.abort_abi, Toast.LENGTH_LONG).show();
+    // ---------------------------------------------------------------- 启动辅助
+
+    private void startAssist() {
+        if (!DeviceCompat.engineSupported()) {
+            new AlertDialog.Builder(this)
+                    .setTitle("当前系统暂不支持")
+                    .setMessage("本机是 " + DeviceCompat.androidVersion() + "。\n\n"
+                            + "随 App 打包的象棋引擎要求 Android 10 及以上，"
+                            + "所以这台手机暂时跑不起来。\n\n"
+                            + "App 本身支持更老的系统，只要之后重新编译一版引擎即可。")
+                    .setPositiveButton("知道了", null)
+                    .show();
             return;
         }
         if (!DeviceCompat.canDrawOverlays(this)) {
-            Toast.makeText(this, R.string.toast_need_overlay, Toast.LENGTH_LONG).show();
-            startActivityForResult(DeviceCompat.overlaySettingsIntent(this), REQ_OVERLAY);
+            // 注意：这里只是「提示」，不是「拦截」。
+            // 检测本身可能不准，所以给用户一个「仍然继续」的出口。
+            new AlertDialog.Builder(this)
+                    .setTitle("悬浮窗权限可能未开启")
+                    .setMessage("检测结果说悬浮窗权限未开启。\n\n"
+                            + DeviceCompat.overlayHint()
+                            + "\n\n如果你确定已经开启，可以直接选「仍然继续」——"
+                            + "能不能显示以实际结果为准。")
+                    .setPositiveButton("去开启", (d, w) -> DeviceCompat.openOverlaySettings(this))
+                    .setNegativeButton("仍然继续", (d, w) -> requestProjection())
+                    .setNeutralButton("取消", null)
+                    .show();
             return;
         }
+        requestProjection();
+    }
+
+    private void requestProjection() {
         MediaProjectionManager mgr =
                 (MediaProjectionManager) getSystemService(MEDIA_PROJECTION_SERVICE);
         if (mgr == null) {
-            Toast.makeText(this, "系统不支持录屏", Toast.LENGTH_LONG).show();
+            toast("系统不支持录屏，无法识别棋局");
             return;
         }
-        startActivityForResult(mgr.createScreenCaptureIntent(), REQ_PROJECTION);
+        try {
+            startActivityForResult(mgr.createScreenCaptureIntent(), REQ_PROJECTION);
+        } catch (Throwable t) {
+            toast("无法打开录屏授权窗口：" + t.getMessage());
+        }
     }
+
+    // ---------------------------------------------------------------- 标定
+
+    private void calibrate() {
+        OverlayService s = OverlayService.get();
+        if (s != null && s.isActive() && s.isCaptureRunning()) {
+            openCalibration();
+            return;
+        }
+        // 服务还没跑起来。不把「必须先启动服务」这个顺序丢给用户，
+        // 而是自动把服务拉起来，起来之后直接进入标定界面。
+        pendingCalibration = true;
+        toast("需要先获得一次录屏授权，请在系统窗口里点「开始录制」");
+        startAssist();
+    }
+
+    private void openCalibration() {
+        try {
+            startActivity(new Intent(this, CalibrationActivity.class));
+        } catch (Throwable t) {
+            toast("打开标定界面失败：" + t.getMessage());
+        }
+    }
+
+    // ---------------------------------------------------------------- 诊断
+
+    private void showDiagnostics() {
+        final String text = DeviceCompat.diagnostics(this);
+        new AlertDialog.Builder(this)
+                .setTitle("诊断信息")
+                .setMessage(text)
+                .setPositiveButton("复制", (d, w) -> copyToClipboard(text))
+                .setNegativeButton("关闭", null)
+                .show();
+    }
+
+    private void copyToClipboard(String text) {
+        try {
+            ClipboardManager cm = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+            if (cm != null) {
+                cm.setPrimaryClip(ClipData.newPlainText("诊断信息", text));
+                toast("已复制，可直接粘贴发给开发者");
+            }
+        } catch (Throwable t) {
+            toast("复制失败：" + t.getMessage());
+        }
+    }
+
+    // ---------------------------------------------------------------- 状态刷新
 
     private void requestNotificationPermission() {
         if (Build.VERSION.SDK_INT < 33) {
-            Toast.makeText(this, "此系统版本无需通知权限", Toast.LENGTH_SHORT).show();
+            toast("此系统版本无需通知权限");
             return;
         }
-        if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
-                == PackageManager.PERMISSION_GRANTED) {
-            Toast.makeText(this, "通知权限已开启", Toast.LENGTH_SHORT).show();
+        if (DeviceCompat.hasNotificationPermission(this)) {
+            toast("通知权限已开启");
             return;
         }
         requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, REQ_NOTIF);
     }
-
-    // ------------------------------------------------------------ 状态刷新
 
     private void refresh() {
         if (isFinishing() || isDestroyed()) {
@@ -169,55 +273,59 @@ public final class MainActivity extends Activity {
 
         boolean overlayOk = DeviceCompat.canDrawOverlays(this);
         btnOverlay.setText(overlayOk ? R.string.action_granted : R.string.action_grant);
-        btnOverlay.setEnabled(!overlayOk);
+        btnOverlay.setEnabled(true);
 
-        boolean notifOk = hasNotificationPermission();
+        boolean notifOk = DeviceCompat.hasNotificationPermission(this);
         btnNotif.setText(notifOk ? R.string.action_granted : R.string.action_grant);
-        btnNotif.setEnabled(!notifOk);
+        btnNotif.setEnabled(true);
 
         boolean batteryOk = DeviceCompat.ignoringBatteryOptimizations(this);
         btnBattery.setText(batteryOk ? R.string.action_granted : R.string.action_grant);
-        btnBattery.setEnabled(!batteryOk);
+        btnBattery.setEnabled(true);
 
-        boolean abiOk = !DeviceCompat.is32BitOnly() && DeviceCompat.engineSupported();
+        boolean engineOk = DeviceCompat.engineSupported();
+        boolean abiOk = !DeviceCompat.is32BitOnly() && engineOk;
         tvAbiWarning.setVisibility(abiOk ? TextView.GONE : TextView.VISIBLE);
         if (!abiOk) {
             tvAbiWarning.setText(DeviceCompat.is32BitOnly()
                     ? getString(R.string.abort_abi)
-                    : "当前引擎只支持 Android 10 及以上，你的系统是 "
-                            + DeviceCompat.androidVersion()
-                            + "。App 代码本身支持更老系统，需用 NDK 重编引擎后才能运行。");
+                    : "此系统（" + DeviceCompat.androidVersion() + "）低于引擎要求的最低版本"
+                            + "（Android 10）。App 功能正常，但引擎无法启动；"
+                            + "需要用 NDK 重新编译一版引擎才能在这台手机上使用。");
         }
 
         OverlayService s = OverlayService.get();
         boolean active = s != null && s.isActive();
-        btnStart.setEnabled(abiOk && overlayOk && !active);
+        // 按钮始终可点，避免「点不动又不知道为什么」。
+        btnStart.setEnabled(engineOk && !active);
         btnStop.setEnabled(active);
 
-        String runtime;
+        StringBuilder sb = new StringBuilder();
         if (!active) {
-            runtime = getString(R.string.status_idle);
+            sb.append("未启动。\n");
+            sb.append("操作顺序：① 开悬浮窗权限 → ② 点「标定棋盘四角」→ ③ 切到象棋 App 下棋。");
+            sb.append("\n\n提示：点「标定」时如果辅助还没启动，会自动先帮你启动。");
         } else {
-            String engine = s.isEngineReady() ? "引擎就绪" : "引擎未启动";
-            String calib = s.isCalibrated() ? "已标定" : "未标定（请点「标定棋盘四角」）";
-            runtime = "状态：" + s.getStatusText() + "\n" + engine + " · " + calib
-                    + "\n\n后台保活提示：" + DeviceCompat.keepAliveHint();
+            sb.append("运行中。\n");
+            sb.append("· 截屏：").append(s.isCaptureRunning() ? "正常" : "未运行");
+            sb.append("\n· 引擎：").append(s.isEngineReady() ? "就绪" : "未启动");
+            sb.append("\n· 标定：").append(s.isCalibrated() ? "已完成" : "尚未完成");
+            sb.append("\n· 悬浮窗：").append(s.isOverlayShown() ? "已显示" : "未显示");
+            if (!s.isOverlayShown()) {
+                sb.append("  ← 请点「诊断信息」查看原因");
+            }
+            String err = s.getLastError();
+            if (err != null && err.length() > 0) {
+                sb.append("\n\n最近提示：").append(err);
+            }
+            sb.append("\n\n").append(DeviceCompat.keepAliveHint());
         }
-        tvRuntime.setText(runtime);
+        tvRuntime.setText(sb.toString());
 
-        tvSetupHint.setText(getString(R.string.setup_hint));
         main.removeCallbacks(refreshTask);
-        if (running) {
+        if (showing) {
             main.postDelayed(refreshTask, 1000);
         }
-    }
-
-    private boolean hasNotificationPermission() {
-        if (Build.VERSION.SDK_INT < 33) {
-            return true;
-        }
-        return checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
-                == PackageManager.PERMISSION_GRANTED;
     }
 
     private void toast(String text) {

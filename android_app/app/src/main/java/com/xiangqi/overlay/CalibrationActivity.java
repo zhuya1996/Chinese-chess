@@ -3,6 +3,8 @@ package com.xiangqi.overlay;
 import android.app.Activity;
 import android.graphics.Bitmap;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.widget.Button;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -25,6 +27,9 @@ public final class CalibrationActivity extends Activity {
     private boolean blackBottom = false;
     private Bitmap frame;
     private boolean working;
+    private int retries;
+
+    private final Handler main = new Handler(Looper.getMainLooper());
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -41,11 +46,20 @@ public final class CalibrationActivity extends Activity {
             blackBottom = !blackBottom;
             updateSideText();
         });
-        btnRecapture.setOnClickListener(v -> loadFrame());
+        btnRecapture.setOnClickListener(v -> {
+            retries = 0;
+            loadFrame();
+        });
         btnConfirm.setOnClickListener(v -> doCalibrate());
 
         updateSideText();
         loadFrame();
+    }
+
+    @Override
+    protected void onDestroy() {
+        main.removeCallbacksAndMessages(null);
+        super.onDestroy();
     }
 
     private void updateSideText() {
@@ -54,13 +68,34 @@ public final class CalibrationActivity extends Activity {
                 : R.string.calib_bottom_red);
     }
 
+    /**
+     * 取一帧画面。
+     * <p>
+     * 录屏管线刚建好时 ImageReader 往往还没有可用帧，所以这里必须重试，
+     * 否则用户一进标定界面就看到「没有画面」，会误以为服务没启动。
+     */
     private void loadFrame() {
+        if (isFinishing() || isDestroyed()) {
+            return;
+        }
         Bitmap bmp = OverlayService.takeCalibrationFrame();
         if (bmp == null) {
-            tvStatus.setText(R.string.calib_need_frame);
+            if (retries++ < 12) {
+                tvStatus.setText("正在等待截屏画面…（第 " + retries + " 次）");
+                main.postDelayed(this::loadFrame, 400);
+                return;
+            }
+            OverlayService s = OverlayService.get();
+            String why = (s == null)
+                    ? "后台服务没有运行"
+                    : (s.getLastError() != null ? s.getLastError() : "截屏没有产生画面");
+            tvStatus.setText("拿不到画面：" + why
+                    + "\n请回到主界面确认「悬浮窗辅助」处于运行中，"
+                    + "或点「诊断信息」查看详情。");
             calibView.setBitmap(null);
             return;
         }
+        retries = 0;
         frame = bmp;
         calibView.setBitmap(bmp);
 
