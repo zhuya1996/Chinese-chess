@@ -46,16 +46,9 @@
             </intent-filter>
         </activity>
 
-        <!-- 四角标定：显示截取到的画面，拖动四个角框住棋盘 -->
-        <activity
-            android:name=".CalibrationActivity"
-            android:exported="false"
-            android:label="@string/calibration_title"
-            android:launchMode="singleTop"
-            android:screenOrientation="portrait"
-            android:theme="@style/AppTheme.NoActionBar" />
-
-        <!-- 核心前台服务：截屏 → 识别 → 引擎 → 悬浮窗 -->
+        <!-- 核心前台服务：截屏 → 识别 → 引擎 → 悬浮窗（标定也在悬浮窗内完成，
+             不再有独立标定 Activity —— 从后台启动 Activity 在 Android 10+ 受限，
+             Android 16 + HyperOS 实测会直接崩溃） -->
         <service
             android:name=".OverlayService"
             android:enabled="true"

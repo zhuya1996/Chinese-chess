@@ -33,6 +33,12 @@ public final class OverlayController {
         void onPauseClicked();
 
         void onCloseClicked();
+
+        /** 标定层上点了「确认标定」。corners 为 0-1 相对坐标 ×8。 */
+        void onCalibConfirm(float[] corners, boolean blackBottom);
+
+        /** 标定层上点了「取消」或「重新抓取」。 */
+        void onCalibCancel();
     }
 
     private final Context context;
@@ -56,6 +62,16 @@ public final class OverlayController {
     private int dragOffsetX;
     private int dragOffsetY;
 
+    // ---- 标定层：全屏可触摸悬浮窗，内嵌 CalibrationView ----
+    private View calibLayer;
+    private WindowManager.LayoutParams calibParams;
+    private CalibrationView calibView;
+    private TextView tvCalibStatus;
+    private Button btnCalibSide;
+    private Button btnCalibOk;
+    private boolean calibBlackBottom;
+    private boolean calibrating;
+
     public OverlayController(Context context, Callback callback) {
         this.context = context;
         this.callback = callback;
@@ -63,6 +79,10 @@ public final class OverlayController {
 
     public boolean isShown() {
         return shown;
+    }
+
+    public boolean isCalibrating() {
+        return calibrating;
     }
 
     /** 显示悬浮窗。返回 null 成功，否则为需要告知用户的原因。 */
@@ -298,7 +318,119 @@ public final class OverlayController {
         }
     }
 
+    // ------------------------------------------------------------ 标定层
+
+    /**
+     * 打开标定层。必须在主线程调用；frame 为冻结的棋盘画面，可为 null
+     * （此时层内会提示用户先去象棋 App 停留几秒）。
+     *
+     * @return true 表示标定层已挂上；false 表示添加窗口失败（调用方应复位状态）
+     */
+    public boolean showCalibration(android.graphics.Bitmap frame, float[] cornersRel,
+                                   boolean blackBottom) {
+        if (!shown || wm == null) {
+            return;
+        }
+        if (calibLayer != null) {
+            hideCalibration();
+        }
+        Context themed = new ContextThemeWrapper(context, R.style.AppTheme);
+        View layer = LayoutInflater.from(themed).inflate(R.layout.overlay_calibration, null);
+        calibView = layer.findViewById(R.id.calibView);
+        tvCalibStatus = layer.findViewById(R.id.tvCalibStatus);
+        btnCalibSide = layer.findViewById(R.id.btnCalibSide);
+        btnCalibOk = layer.findViewById(R.id.btnCalibOk);
+        Button btnRecapture = layer.findViewById(R.id.btnCalibRecapture);
+        Button btnCancel = layer.findViewById(R.id.btnCalibCancel);
+
+        calibBlackBottom = blackBottom;
+        updateSideText();
+
+        btnCalibSide.setOnClickListener(v -> {
+            calibBlackBottom = !calibBlackBottom;
+            updateSideText();
+        });
+        btnCalibOk.setOnClickListener(v -> {
+            if (callback != null && calibView.hasBitmap()) {
+                callback.onCalibConfirm(calibView.cornersRelative(), calibBlackBottom);
+            }
+        });
+        btnRecapture.setOnClickListener(v -> {
+            if (callback != null) {
+                callback.onCalibCancel();
+            }
+        });
+        btnCancel.setOnClickListener(v -> {
+            if (callback != null) {
+                callback.onCalibCancel();
+            }
+        });
+
+        calibView.setBitmap(frame);
+        if (frame != null && cornersRel != null && cornersRel.length >= 8) {
+            calibView.setCornersRelative(cornersRel);
+        }
+        setCalibStatus(frame == null
+                ? "还没有棋盘画面。请点「重新抓取」，先去象棋 App 打开一盘棋、停留两三秒，再点悬浮窗的「标定」。"
+                : "画面来自你点标定前的象棋 App。拖动角点对准棋盘交叉点后确认。");
+
+        calibParams = new WindowManager.LayoutParams(
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.MATCH_PARENT,
+                DeviceCompat.overlayWindowType(),
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | FLAG_LAYOUT,
+                android.graphics.PixelFormat.TRANSLUCENT);
+        try {
+            wm.addView(layer, calibParams);
+        } catch (Throwable e) {
+            calibLayer = null;
+            calibView = null;
+            // 不抛出：标定失败绝不能拖垮进程
+            if (tvStatus != null) {
+                tvStatus.setText("标定层未能显示：" + e.getClass().getSimpleName()
+                        + " " + e.getMessage());
+            }
+            return false;
+        }
+        calibLayer = layer;
+        calibrating = true;
+        return true;
+    }
+
+    private static final int FLAG_LAYOUT = WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN;
+
+    private void updateSideText() {
+        if (btnCalibSide != null) {
+            btnCalibSide.setText(calibBlackBottom
+                    ? R.string.calib_bottom_black : R.string.calib_bottom_red);
+        }
+    }
+
+    /** 更新标定层上的状态文字。必须在主线程调用。 */
+    public void setCalibStatus(String text) {
+        if (tvCalibStatus != null) {
+            tvCalibStatus.setText(text == null ? "" : text);
+        }
+    }
+
+    /** 关闭标定层。必须在主线程调用。 */
+    public void hideCalibration() {
+        if (calibLayer != null && wm != null) {
+            try {
+                wm.removeView(calibLayer);
+            } catch (Throwable ignored) {
+            }
+        }
+        calibLayer = null;
+        calibView = null;
+        tvCalibStatus = null;
+        btnCalibSide = null;
+        btnCalibOk = null;
+        calibrating = false;
+    }
+
     public void hide() {
+        hideCalibration();
         if (panel != null && wm != null) {
             try {
                 wm.removeView(panel);

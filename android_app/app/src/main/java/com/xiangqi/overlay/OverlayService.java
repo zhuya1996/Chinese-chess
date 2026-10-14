@@ -343,7 +343,7 @@ public final class OverlayService extends Service {
             overlay = new OverlayController(this, new OverlayController.Callback() {
                 @Override
                 public void onCalibrateClicked() {
-                    openCalibration();
+                    startCalibration();
                 }
 
                 @Override
@@ -355,6 +355,16 @@ public final class OverlayService extends Service {
                 @Override
                 public void onCloseClicked() {
                     stopAssist();
+                }
+
+                @Override
+                public void onCalibConfirm(float[] corners, boolean blackBottom) {
+                    OverlayService.this.onCalibConfirm(corners, blackBottom);
+                }
+
+                @Override
+                public void onCalibCancel() {
+                    OverlayService.this.onCalibCancel();
                 }
             });
         }
@@ -375,10 +385,117 @@ public final class OverlayService extends Service {
         stopSelf();
     }
 
-    private void openCalibration() {
-        Intent i = new Intent(this, CalibrationActivity.class);
-        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        startActivity(i);
+    // ------------------------------------------------------------ 标定（悬浮窗内完成）
+    // 标定不启动 Activity：从后台服务 startActivity 在 Android 10+ 受严格限制，
+    // Android 16 + HyperOS 实测直接崩溃（v1.2 真机反馈）。标定层是悬浮窗的一部分。
+
+    /** 标定期间为 true：主循环整段暂停，避免把标定层自己截进冻结帧。 */
+    private volatile boolean calibrating;
+
+    /** 当前标定用的冻结帧（与标定层显示的一致）。 */
+    private volatile Bitmap calibFrame;
+
+    /** 标定线程正在跑（防「确认」按钮重复点击）。 */
+    private volatile boolean calibWorking;
+
+    /** 打开悬浮窗内的标定层。可在任意线程调用。 */
+    public void startCalibration() {
+        if (overlay == null || !overlay.isShown()) {
+            statusToast("悬浮窗未显示，无法标定。请先重启辅助。");
+            return;
+        }
+        if (calibrating) {
+            return; // 已在标定中
+        }
+        Bitmap frame = frozenBitmap();
+        if (frame == null) {
+            statusToast("还没有采到象棋 App 的画面：请切到象棋 App 打开一盘棋，"
+                    + "让棋盘完整显示两三秒，再点「标定」。");
+            return;
+        }
+        calibFrame = frame;
+        float[] corners = profile.isCalibrated() ? profile.cornersRel : null;
+        boolean blackBottom = "black".equals(profile.bottomSide);
+        final Bitmap bmp = frame;
+        main.post(() -> {
+            if (overlay == null) {
+                return;
+            }
+            boolean ok = overlay.showCalibration(bmp, corners, blackBottom);
+            // 成功 → 暂停主循环（标定层盖着屏幕，不能采样）；
+            // 失败 → 复位，否则主循环会被永久挂起。
+            calibrating = ok;
+            if (!ok) {
+                calibFrame = null;
+            }
+        });
+    }
+
+    private void onCalibConfirm(float[] corners, boolean blackBottom) {
+        if (calibWorking) {
+            return;
+        }
+        final Bitmap bmp = calibFrame;
+        final float[] pts = corners;
+        final String hint = blackBottom ? "black" : "red";
+        if (bmp == null || pts == null || pts.length < 8) {
+            main.post(() -> {
+                if (overlay != null) {
+                    overlay.hideCalibration();
+                }
+                calibFrame = null;
+                calibrating = false;
+            });
+            return;
+        }
+        calibWorking = true;
+        if (overlay != null) {
+            overlay.setCalibStatus("正在生成识别模板，请稍候…");
+        }
+        new Thread(() -> {
+            String error;
+            try {
+                XiangqiRecognizer rec = new XiangqiRecognizer();
+                error = rec.calibrate(profile,
+                        XiangqiRecognizer.fromBitmap(bmp), pts, hint);
+            } catch (Throwable t) {
+                error = "识别模板生成失败：" + t.getClass().getSimpleName()
+                        + (t.getMessage() == null ? "" : " " + t.getMessage());
+            }
+            final String err = error;
+            final boolean ok = err == null && profile.save(this);
+            final String msg = ok ? null
+                    : (err != null ? err : "保存标定文件失败");
+            main.post(() -> {
+                calibWorking = false;
+                if (ok) {
+                    applyProfile();
+                    calibFrame = null;
+                    calibrating = false;
+                    if (overlay != null) {
+                        overlay.hideCalibration();
+                    }
+                    statusToast("标定成功，已保存模板");
+                } else {
+                    // 标定层还开着，保持 calibrating=true（继续暂停采样，
+                    // 否则会把标定层自己截进冻结帧）。用户可调整角点重试。
+                    if (overlay != null) {
+                        overlay.setCalibStatus("标定失败：" + msg
+                                + "\n可调整角点后重试，或点「取消」退出。");
+                    }
+                }
+            });
+        }, "calibrate").start();
+    }
+
+    private void onCalibCancel() {
+        calibFrame = null;
+        calibrating = false;
+        main.post(() -> {
+            if (overlay != null) {
+                overlay.hideCalibration();
+            }
+        });
     }
 
     private void statusToast(String text) {
@@ -402,6 +519,12 @@ public final class OverlayService extends Service {
         while (active) {
             try {
                 if (paused) {
+                    Thread.sleep(400);
+                    continue;
+                }
+                if (calibrating) {
+                    // 标定层正盖在屏幕上：此时截屏只会截到标定层自己，
+                    // 既污染冻结帧又没有识别价值，整段跳过。
                     Thread.sleep(400);
                     continue;
                 }

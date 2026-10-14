@@ -46,28 +46,8 @@ public final class MainActivity extends Activity {
     private final Runnable refreshTask = this::refresh;
     private boolean showing;
 
-    /** 用户点「标定」但服务还没起来时置位，服务起来后自动进入标定界面。 */
+    /** 用户点「标定」但服务还没起来时置位，服务起来后给出引导提示。 */
     private boolean pendingCalibration;
-    private int calibWaitTries;
-
-    private final Runnable calibWaitTask = new Runnable() {
-        @Override
-        public void run() {
-            OverlayService s = OverlayService.get();
-            if (s != null && s.isActive() && s.isCaptureRunning()) {
-                pendingCalibration = false;
-                openCalibration();
-                return;
-            }
-            if (++calibWaitTries < 15) {
-                main.postDelayed(this, 600);
-                return;
-            }
-            pendingCalibration = false;
-            toast("启动超时。请点「启动悬浮窗辅助」看具体提示，"
-                    + "或用下方「诊断信息」把结果反馈给开发者。");
-        }
-    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -153,8 +133,9 @@ public final class MainActivity extends Activity {
             return;
         }
         if (pendingCalibration) {
-            calibWaitTries = 0;
-            main.postDelayed(calibWaitTask, 600);
+            pendingCalibration = false;
+            toast("辅助已启动。请切到象棋 App 打开一盘棋、让棋盘显示两三秒，"
+                    + "再点悬浮窗面板上的「标定」按钮。");
         } else {
             toast(getString(R.string.toast_started));
         }
@@ -212,32 +193,28 @@ public final class MainActivity extends Activity {
     private void calibrate() {
         OverlayService s = OverlayService.get();
         if (s != null && s.isActive() && s.isCaptureRunning()) {
-            if (!s.hasFrozenFrame()) {
-                toast("还没采到象棋 App 的画面。请先切到象棋 App 打开一盘棋、"
-                        + "让棋盘完整显示几秒，再回来标定。");
-            }
-            openCalibration();
+            // 标定层是悬浮窗的一部分（不启动 Activity），入口在悬浮窗面板上。
+            toast("请在象棋 App 的棋盘界面停留两三秒，然后点悬浮窗面板上的「标定」按钮。");
             return;
         }
-        // 服务还没跑起来。不把「必须先启动服务」这个顺序丢给用户，
-        // 而是自动把服务拉起来，起来之后直接进入标定界面。
+        // 服务还没跑起来：自动把服务拉起来，起来后引导去悬浮窗点「标定」。
         pendingCalibration = true;
         toast("需要先获得一次录屏授权，请在系统窗口里点「开始录制」");
         startAssist();
     }
 
-    private void openCalibration() {
-        try {
-            startActivity(new Intent(this, CalibrationActivity.class));
-        } catch (Throwable t) {
-            toast("打开标定界面失败：" + t.getMessage());
-        }
-    }
-
     // ---------------------------------------------------------------- 诊断
 
     private void showDiagnostics() {
-        final String text = DeviceCompat.diagnostics(this);
+        StringBuilder sb = new StringBuilder(DeviceCompat.diagnostics(this));
+        String crash = CrashLogger.lastCrash();
+        if (crash != null) {
+            sb.append("\n\n== 最近一次崩溃（反馈时请务必带上）==\n");
+            sb.append(crash);
+        } else {
+            sb.append("\n\n最近崩溃：无");
+        }
+        final String text = sb.toString();
         new AlertDialog.Builder(this)
                 .setTitle("诊断信息")
                 .setMessage(text)

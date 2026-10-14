@@ -1,8 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 标定层：全屏悬浮窗，覆盖在象棋 App 之上。
+     标定不再使用独立 Activity —— 从后台服务启动 Activity 在 Android 10+
+     受严格限制（Android 16 + HyperOS 上直接崩溃），所以整个标定流程
+     都在悬浮窗内完成。CalibrationView 的触摸（拖角点/缩放）由悬浮窗接收。 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:background="#111111">
+    android:layout_height="match_parent">
 
     <com.xiangqi.overlay.CalibrationView
         android:id="@+id/calibView"
@@ -13,24 +16,33 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_gravity="top"
-        android:background="#CC000000"
+        android:background="#E6000000"
         android:orientation="vertical"
         android:padding="12dp">
 
         <TextView
-            android:id="@+id/tvCalibInstruction"
+            android:id="@+id/tvCalibTitle"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="@string/calib_instruction"
+            android:text="@string/calib_layer_title"
             android:textColor="#FFFFFF"
-            android:textSize="14sp" />
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@string/calib_instruction"
+            android:textColor="#DDDDDD"
+            android:textSize="13sp" />
 
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="2dp"
             android:text="@string/calib_zoom_hint"
-            android:textColor="#AAAAAA"
+            android:textColor="#999999"
             android:textSize="12sp" />
     </LinearLayout>
 
@@ -38,8 +50,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom"
-        android:layout_margin="10dp"
-        android:background="#CC000000"
+        android:background="#E6000000"
         android:orientation="vertical"
         android:padding="10dp">
 
@@ -57,7 +68,7 @@
             android:orientation="horizontal">
 
             <Button
-                android:id="@+id/btnSide"
+                android:id="@+id/btnCalibSide"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
@@ -65,21 +76,37 @@
                 android:textSize="13sp" />
 
             <Button
-                android:id="@+id/btnRecapture"
+                android:id="@+id/btnCalibRecapture"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
+                android:layout_marginStart="6dp"
                 android:layout_weight="1"
                 android:text="@string/calib_recapture"
                 android:textSize="13sp" />
         </LinearLayout>
 
-        <Button
-            android:id="@+id/btnConfirmCalib"
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="@string/calib_confirm"
-            android:textSize="15sp" />
+            android:layout_marginTop="6dp"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/btnCalibCancel"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/calib_cancel"
+                android:textSize="14sp" />
+
+            <Button
+                android:id="@+id/btnCalibOk"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="6dp"
+                android:layout_weight="2"
+                android:text="@string/calib_confirm"
+                android:textSize="15sp" />
+        </LinearLayout>
     </LinearLayout>
 </FrameLayout>
