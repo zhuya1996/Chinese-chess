@@ -185,7 +185,7 @@ public final class XiangqiRecognizer {
         String violation = shapeViolation(board);
         if (violation != null) {
             r.seriousMisread = true;
-            reject(r, "棋子数量不合法（" + violation
+            reject(r, "棋子数量不合法（" + violation + "，颜色校正:" + lastColorCorrInfo
                     + "）。多半有东西挡住了棋盘边缘——如本助手面板或箭头，点「收起」或稍等 1 秒会自动让开");
             return r;
         }
@@ -359,9 +359,13 @@ public final class XiangqiRecognizer {
      * 做 2-means 聚成两簇：高红度簇 = 红方。真机实测分离度 44（黑≈24 / 红≈68）。
      * 两簇分不开（异常帧/特殊主题）或取值落在分界带内的点，保持模板原判定。
      */
+    /** 最近一次颜色校正的运行状态（写入报错信息，便于远程判断版本行为）。 */
+    private String lastColorCorrInfo = "未运行";
+
     private void applyColorCorrection(Frame frame, char[][] board) {
         double[] h = canonicalToScreen;
         if (h == null || frame == null || frame.argb == null) {
+            lastColorCorrInfo = "跳过(无彩色帧)";
             return;
         }
         double[] corners = profile.absoluteCorners(frame.width, frame.height);
@@ -369,6 +373,7 @@ public final class XiangqiRecognizer {
         float cellW = (float) (((corners[2] - corners[0]) + (corners[6] - corners[4])) / 16.0);
         float half = 0.45f * Math.min(cellW, cellH);
         if (half < 8) {
+            lastColorCorrInfo = "跳过(采样窗过小)";
             return;
         }
 
@@ -383,6 +388,7 @@ public final class XiangqiRecognizer {
                 }
                 float[] sp = canonicalToScreenPt(c * CELL, r * CELL);
                 if (sp == null) {
+                    lastColorCorrInfo = "跳过(单应无效)";
                     return;
                 }
                 double v = sampleRedness(frame, sp[0], sp[1], half);
@@ -395,6 +401,7 @@ public final class XiangqiRecognizer {
             }
         }
         if (n < 4) {
+            lastColorCorrInfo = "跳过(有效点不足)";
             return;
         }
 
@@ -404,6 +411,7 @@ public final class XiangqiRecognizer {
             if (vals[i] > hi) hi = vals[i];
         }
         if (hi - lo < 12) {
+            lastColorCorrInfo = String.format("跳过(极差%.0f太小)", hi - lo);
             return;
         }
         double c1 = lo + (hi - lo) * 0.33, c2 = lo + (hi - lo) * 0.67;
@@ -428,10 +436,12 @@ public final class XiangqiRecognizer {
             c2 = t;
         }
         if (c2 - c1 < 12) {
+            lastColorCorrInfo = String.format("跳过(簇距%.0f太小)", c2 - c1);
             return;
         }
         double mid = (c1 + c2) / 2;
         double dead = 0.15 * (c2 - c1);   // 分界死区：拿不准就信模板
+        lastColorCorrInfo = String.format("生效 黑%.0f/红%.0f", c1, c2);
         for (int i = 0; i < n; i++) {
             char cur = board[pr[i]][pc[i]];
             char shape = Character.toUpperCase(cur);
