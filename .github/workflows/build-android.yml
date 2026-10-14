@@ -128,9 +128,9 @@ jobs:
             ### 系统要求
             - Android 10（API 29）及以上
             - 手机 CPU 需为 arm64（2017 年之后的机型基本都是）
-        files: |
-          out/xiangqi-overlay-release.apk
-          out/xiangqi-overlay-debug.apk
-        draft: false
-        prerelease: false
-        fail_on_unmatched_files: true
+          files: |
+            out/xiangqi-overlay-release.apk
+            out/xiangqi-overlay-debug.apk
+          draft: false
+          prerelease: false
+          fail_on_unmatched_files: true
