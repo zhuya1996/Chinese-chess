@@ -398,6 +398,31 @@ public final class OverlayService extends Service {
     /** 标定线程正在跑（防「确认」按钮重复点击）。 */
     private volatile boolean calibWorking;
 
+    /** 上次自动识别棋盘的时间（限频用）。 */
+    private volatile long lastAutoCalibAttempt;
+
+    /**
+     * 自动识别棋盘并生成模板。在识别线程调用，识别失败静默返回
+     * （面板会持续提示，用户也可以走手动标定）。
+     */
+    private void tryAutoCalibrate(ScreenCapture.Snapshot s) {
+        try {
+            float[] corners = BoardAutoDetect.detect(s.gray);
+            if (corners == null) {
+                return;
+            }
+            XiangqiRecognizer.Frame frame = new XiangqiRecognizer.Frame(
+                    s.gray, s.argb, s.width, s.height, s.rowStride);
+            String err = recognizer.calibrate(profile, frame, corners, null);
+            if (err == null && profile.save(this)) {
+                applyProfile();
+                statusToast("已自动识别棋盘，无需手动标定。开始为你分析。");
+            }
+        } catch (Throwable t) {
+            // 自动标定只是捷径，失败不影响手动路径
+        }
+    }
+
     /** 打开悬浮窗内的标定层。可在任意线程调用。 */
     public void startCalibration() {
         if (overlay == null || !overlay.isShown()) {
@@ -555,8 +580,19 @@ public final class OverlayService extends Service {
                 rememberFrameThrottled(s);
 
                 if (!profile.isCalibrated()) {
-                    updatePanel("请先点「标定」框住棋盘四角");
-                    Thread.sleep(700);
+                    // 优先自动识别棋盘（限频 2.5 秒一次，失败就持续重试，
+                    // 直到用户真的摆出初始局面为止）。识别成功的前提是
+                    // 「初始局面」校验通过，所以不会在残局上乱建模板。
+                    long now = android.os.SystemClock.elapsedRealtime();
+                    if (now - lastAutoCalibAttempt > 2500) {
+                        lastAutoCalibAttempt = now;
+                        tryAutoCalibrate(s);
+                    }
+                    if (!profile.isCalibrated()) {
+                        updatePanel("正在自动识别棋盘：请开一局新的对局（摆好初始棋子），"
+                                + "识别成功会自动提示。也可点面板「标定」手动框选。");
+                        Thread.sleep(800);
+                    }
                     continue;
                 }
 

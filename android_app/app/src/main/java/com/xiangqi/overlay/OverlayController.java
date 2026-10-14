@@ -323,8 +323,12 @@ public final class OverlayController {
     /**
      * 打开标定层。必须在主线程调用；frame 为冻结的棋盘画面，可为 null
      * （此时层内会提示用户先去象棋 App 停留几秒）。
+     * <p>
+     * 界面用纯代码构建，不走 XML inflate —— v1.3 真机（Android 16）上
+     * inflate + findViewById 曾返回 null 导致崩溃，代码构建消除这类问题。
+     * 整个方法体兜底 try/catch：标定层任何失败都绝不能拖垮进程。
      *
-     * @return true 表示标定层已挂上；false 表示添加窗口失败（调用方应复位状态）
+     * @return true 表示标定层已挂上；false 表示失败（调用方应复位状态）
      */
     public boolean showCalibration(android.graphics.Bitmap frame, float[] cornersRel,
                                    boolean blackBottom) {
@@ -334,67 +338,166 @@ public final class OverlayController {
         if (calibLayer != null) {
             hideCalibration();
         }
-        Context themed = new ContextThemeWrapper(context, R.style.AppTheme);
-        View layer = LayoutInflater.from(themed).inflate(R.layout.overlay_calibration, null);
-        calibView = layer.findViewById(R.id.calibView);
-        tvCalibStatus = layer.findViewById(R.id.tvCalibStatus);
-        btnCalibSide = layer.findViewById(R.id.btnCalibSide);
-        btnCalibOk = layer.findViewById(R.id.btnCalibOk);
-        Button btnRecapture = layer.findViewById(R.id.btnCalibRecapture);
-        Button btnCancel = layer.findViewById(R.id.btnCalibCancel);
-
-        calibBlackBottom = blackBottom;
-        updateSideText();
-
-        btnCalibSide.setOnClickListener(v -> {
-            calibBlackBottom = !calibBlackBottom;
-            updateSideText();
-        });
-        btnCalibOk.setOnClickListener(v -> {
-            if (callback != null && calibView.hasBitmap()) {
-                callback.onCalibConfirm(calibView.cornersRelative(), calibBlackBottom);
-            }
-        });
-        btnRecapture.setOnClickListener(v -> {
-            if (callback != null) {
-                callback.onCalibCancel();
-            }
-        });
-        btnCancel.setOnClickListener(v -> {
-            if (callback != null) {
-                callback.onCalibCancel();
-            }
-        });
-
-        calibView.setBitmap(frame);
-        if (frame != null && cornersRel != null && cornersRel.length >= 8) {
-            calibView.setCornersRelative(cornersRel);
-        }
-        setCalibStatus(frame == null
-                ? "还没有棋盘画面。请点「重新抓取」，先去象棋 App 打开一盘棋、停留两三秒，再点悬浮窗的「标定」。"
-                : "画面来自你点标定前的象棋 App。拖动角点对准棋盘交叉点后确认。");
-
-        calibParams = new WindowManager.LayoutParams(
-                WindowManager.LayoutParams.MATCH_PARENT,
-                WindowManager.LayoutParams.MATCH_PARENT,
-                DeviceCompat.overlayWindowType(),
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | FLAG_LAYOUT,
-                android.graphics.PixelFormat.TRANSLUCENT);
         try {
-            wm.addView(layer, calibParams);
+            Context themed = new ContextThemeWrapper(context, R.style.AppTheme);
+
+            android.widget.LinearLayout root = new android.widget.LinearLayout(themed);
+            root.setOrientation(android.widget.LinearLayout.VERTICAL);
+            root.setBackgroundColor(0xF2111111);
+
+            // 顶部：标题 + 说明
+            TextView title = new TextView(themed);
+            title.setText(R.string.calib_layer_title);
+            title.setTextColor(0xFFFFFFFF);
+            title.setTextSize(16);
+            title.setPadding(dip(12), dip(10), dip(12), dip(2));
+            root.addView(title, new android.widget.LinearLayout.LayoutParams(
+                    android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                    android.widget.LinearLayout.LayoutParams.WRAP_CONTENT));
+
+            TextView instr = new TextView(themed);
+            instr.setText(R.string.calib_instruction);
+            instr.setTextColor(0xFFDDDDDD);
+            instr.setTextSize(13);
+            instr.setPadding(dip(12), dip(2), dip(12), dip(2));
+            root.addView(instr, new android.widget.LinearLayout.LayoutParams(
+                    android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                    android.widget.LinearLayout.LayoutParams.WRAP_CONTENT));
+
+            TextView zoom = new TextView(themed);
+            zoom.setText(R.string.calib_zoom_hint);
+            zoom.setTextColor(0xFF999999);
+            zoom.setTextSize(12);
+            zoom.setPadding(dip(12), dip(0), dip(12), dip(6));
+            root.addView(zoom, new android.widget.LinearLayout.LayoutParams(
+                    android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                    android.widget.LinearLayout.LayoutParams.WRAP_CONTENT));
+
+            // 中部：棋盘画面 + 角点
+            CalibrationView view = new CalibrationView(themed);
+            calibView = view;
+            android.widget.LinearLayout.LayoutParams midParams =
+                    new android.widget.LinearLayout.LayoutParams(
+                            android.widget.LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f);
+            root.addView(view, midParams);
+
+            // 底部：状态 + 按钮
+            android.widget.LinearLayout bottom = new android.widget.LinearLayout(themed);
+            bottom.setOrientation(android.widget.LinearLayout.VERTICAL);
+            bottom.setBackgroundColor(0xE6000000);
+            bottom.setPadding(dip(10), dip(8), dip(10), dip(10));
+
+            TextView status = new TextView(themed);
+            status.setTextColor(0xFFFFCC80);
+            status.setTextSize(13);
+            tvCalibStatus = status;
+            bottom.addView(status, new android.widget.LinearLayout.LayoutParams(
+                    android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                    android.widget.LinearLayout.LayoutParams.WRAP_CONTENT));
+
+            android.widget.LinearLayout row1 = new android.widget.LinearLayout(themed);
+            row1.setOrientation(android.widget.LinearLayout.HORIZONTAL);
+            Button btnSide = new Button(themed);
+            btnSide.setTextSize(13);
+            Button btnRecapture = new Button(themed);
+            btnRecapture.setTextSize(13);
+            btnRecapture.setText(R.string.calib_recapture);
+            row1.addView(btnSide, rowWeight());
+            row1.addView(btnRecapture, rowWeight());
+            bottom.addView(row1, new android.widget.LinearLayout.LayoutParams(
+                    android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                    android.widget.LinearLayout.LayoutParams.WRAP_CONTENT));
+
+            android.widget.LinearLayout row2 = new android.widget.LinearLayout(themed);
+            row2.setOrientation(android.widget.LinearLayout.HORIZONTAL);
+            Button btnCancel = new Button(themed);
+            btnCancel.setTextSize(14);
+            btnCancel.setText(R.string.calib_cancel);
+            Button btnOk = new Button(themed);
+            btnOk.setTextSize(15);
+            btnOk.setText(R.string.calib_confirm);
+            android.widget.LinearLayout.LayoutParams pCancel = rowWeight();
+            android.widget.LinearLayout.LayoutParams pOk = rowWeight();
+            pOk.weight = 2;
+            row2.addView(btnCancel, pCancel);
+            row2.addView(btnOk, pOk);
+            bottom.addView(row2, new android.widget.LinearLayout.LayoutParams(
+                    android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                    android.widget.LinearLayout.LayoutParams.WRAP_CONTENT));
+            root.addView(bottom, new android.widget.LinearLayout.LayoutParams(
+                    android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                    android.widget.LinearLayout.LayoutParams.WRAP_CONTENT));
+
+            calibBlackBottom = blackBottom;
+            updateSideText();
+            btnCalibSide = btnSide;
+            btnCalibOk = btnOk;
+
+            btnSide.setOnClickListener(v -> {
+                calibBlackBottom = !calibBlackBottom;
+                updateSideText();
+            });
+            btnOk.setOnClickListener(v -> {
+                if (callback != null && calibView != null && calibView.hasBitmap()) {
+                    callback.onCalibConfirm(calibView.cornersRelative(), calibBlackBottom);
+                } else if (callback != null) {
+                    // 没有画面时点确认：当作取消，回到正常循环重新取帧
+                    callback.onCalibCancel();
+                }
+            });
+            btnRecapture.setOnClickListener(v -> {
+                if (callback != null) {
+                    callback.onCalibCancel();
+                }
+            });
+            btnCancel.setOnClickListener(v -> {
+                if (callback != null) {
+                    callback.onCalibCancel();
+                }
+            });
+
+            view.setBitmap(frame);
+            if (frame != null && cornersRel != null && cornersRel.length >= 8) {
+                view.setCornersRelative(cornersRel);
+            }
+            setCalibStatus(frame == null
+                    ? "还没有棋盘画面。请点「取消」，先去象棋 App 打开一盘棋、停留两三秒，再点悬浮窗的「标定」。"
+                    : "画面来自你点标定前的象棋 App。拖动角点对准棋盘交叉点后确认。");
+
+            calibParams = new WindowManager.LayoutParams(
+                    WindowManager.LayoutParams.MATCH_PARENT,
+                    WindowManager.LayoutParams.MATCH_PARENT,
+                    DeviceCompat.overlayWindowType(),
+                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | FLAG_LAYOUT,
+                    PixelFormat.TRANSLUCENT);
+            wm.addView(root, calibParams);
+            calibLayer = root;
+            calibrating = true;
+            return true;
         } catch (Throwable e) {
+            // 标定失败绝不能拖垮进程（v1.3 的教训）
             calibLayer = null;
             calibView = null;
-            // 不抛出：标定失败绝不能拖垮进程
+            tvCalibStatus = null;
+            btnCalibSide = null;
+            btnCalibOk = null;
             if (tvStatus != null) {
-                tvStatus.setText("标定层未能显示：" + e.getClass().getSimpleName()
-                        + " " + e.getMessage());
+                tvStatus.setText("标定层未能显示：" + describeFailure("", e));
             }
             return false;
         }
-        calibLayer = layer;
-        calibrating = true;
-        return true;
+    }
+
+    private int dip(int v) {
+        return (int) (v * context.getResources().getDisplayMetrics().density + 0.5f);
+    }
+
+    private android.widget.LinearLayout.LayoutParams rowWeight() {
+        android.widget.LinearLayout.LayoutParams p =
+                new android.widget.LinearLayout.LayoutParams(0,
+                        android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        p.setMargins(dip(3), dip(2), dip(3), 0);
+        return p;
     }
 
     private static final int FLAG_LAYOUT = WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN;

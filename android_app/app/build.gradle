@@ -10,8 +10,8 @@ android {
         applicationId "com.xiangqi.overlay"
         minSdk 21          // Android 5.0 起，覆盖 MediaProjection 支持的全部版本
         targetSdk 34
-        versionCode 4
-        versionName "1.3"
+        versionCode 5
+        versionName "1.4"
 
         // 引擎架构插槽：目前只有 arm64 版引擎。
         // 以后要用 NDK 编出 32 位引擎，只需把 libpikafish.so 放到
