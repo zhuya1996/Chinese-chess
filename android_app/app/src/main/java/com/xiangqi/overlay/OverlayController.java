@@ -183,6 +183,14 @@ public final class OverlayController {
 
     private void bindViews() {
         tvStatus = panel.findViewById(R.id.tvStatus);
+
+        // 面板标题带上版本号：这是用户看得最多的位置，
+        // 换包后能立刻确认「装的到底是哪一版」，不用猜。
+        TextView tvPanelTitle = panel.findViewById(R.id.tvPanelTitle);
+        if (tvPanelTitle != null) {
+            tvPanelTitle.setText(context.getString(R.string.overlay_title)
+                    + " v" + DeviceCompat.appVersion(context));
+        }
         tvOpponent = panel.findViewById(R.id.tvOpponent);
         tvSuggest = panel.findViewById(R.id.tvSuggest);
         tvScore = panel.findViewById(R.id.tvScore);

@@ -284,8 +284,14 @@ public final class DeviceCompat {
         return sb.toString();
     }
 
-    /** 读取本应用的版本号，用于区分用户手上测的是哪一版。 */
-    private static String appVersion(Context ctx) {
+    /**
+     * 读取本应用自己声明的版本号（来自 APK 的 versionName/versionCode）。
+     * <p>
+     * 它的唯一用途是<b>让用户一眼看出手机上装的是哪一版</b>。
+     * 之前版本号只藏在「诊断信息」里，用户装完新版看不到区别，
+     * 只能凭观感说「好像没变化」，无法判断到底是包没更新还是改动没生效。
+     */
+    public static String appVersion(Context ctx) {
         try {
             android.content.pm.PackageInfo pi =
                     ctx.getPackageManager().getPackageInfo(ctx.getPackageName(), 0);

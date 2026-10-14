@@ -41,6 +41,7 @@ public final class MainActivity extends Activity {
     private Button btnDiag;
     private TextView tvRuntime;
     private TextView tvAbiWarning;
+    private TextView tvVersion;
 
     private final Handler main = new Handler(Looper.getMainLooper());
     private final Runnable refreshTask = this::refresh;
@@ -63,6 +64,14 @@ public final class MainActivity extends Activity {
         btnDiag = findViewById(R.id.btnDiag);
         tvRuntime = findViewById(R.id.tvRuntime);
         tvAbiWarning = findViewById(R.id.tvAbiWarning);
+        tvVersion = findViewById(R.id.tvVersion);
+
+        // 首屏就把版本号摆出来：用户装完新版一眼能确认，
+        // 不用再去「诊断信息」里翻，也不会出现「感觉没变化」这种无法判断的状态。
+        if (tvVersion != null) {
+            tvVersion.setText("当前版本：" + DeviceCompat.appVersion(this)
+                    + "   （若与你下载的版本不一致，说明新包没有装上）");
+        }
 
         // 权限按钮始终可点：即使检测显示已开启，也允许再进设置页确认一次。
         btnOverlay.setOnClickListener(v -> {

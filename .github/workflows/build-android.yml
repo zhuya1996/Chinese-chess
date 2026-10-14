@@ -100,7 +100,21 @@ jobs:
           if command -v apksigner >/dev/null 2>&1; then
             echo "=== 签名校验 ==="
             apksigner verify --print-certs out/xiangqi-overlay-release.apk | head -10
+            # 记录签名指纹：若各次构建的指纹变了，说明签名证书被重新生成过，
+            # 这种包在手机上会因签名不一致而装不上（旧版原地不动 → 用户以为没更新）。
+            FP=$(apksigner verify --print-certs out/xiangqi-overlay-release.apk \
+                 | grep -i "SHA-256 digest" | head -1 | awk '{print $NF}')
+            echo "SIGN_SHA256=$FP" >> $GITHUB_ENV
+            echo "APK 签名指纹：$FP"
           fi
+
+      - name: Read app version
+        run: |
+          V=$(grep -m1 'versionName' android_app/app/build.gradle | sed -E 's/.*"([^"]+)".*/\1/')
+          C=$(grep -m1 'versionCode' android_app/app/build.gradle | sed -E 's/[^0-9]//g')
+          echo "APP_VERSION=$V" >> $GITHUB_ENV
+          echo "APP_VERSION_CODE=$C" >> $GITHUB_ENV
+          echo "检测到 App 版本：$V (versionCode $C)"
 
       - name: Upload APK artifacts
         uses: actions/upload-artifact@v4
@@ -109,16 +123,25 @@ jobs:
           path: out/*.apk
           retention-days: 90
 
-      # 把 APK 发到 Releases 页面，手机上可直接点开下载
-      - name: Publish to Releases
+      # ---- 发布到 Releases ----
+      # 固定标签 apk-latest：方便老文档/老链接继续可用。
+      # 注意：这个标签是「同一个 Release 反复覆盖资产」，某些情况下
+      # 手机端/CDN 会因为 URL 完全没变而拿到旧包，所以它只做兜底。
+      - name: Publish to Releases (fixed tag apk-latest)
         uses: softprops/action-gh-release@v2
         with:
           tag_name: apk-latest
           name: 象棋悬浮窗助手 - 最新构建
+          make_latest: 'false'
           body: |
             ## 中国象棋悬浮窗助手
 
             构建版本：`${{ github.sha }}`
+            App 版本号：**v${{ env.APP_VERSION }}**（versionCode ${{ env.APP_VERSION_CODE }}）
+            签名指纹（SHA-256）：`${{ env.SIGN_SHA256 }}`
+
+            > 这个固定标签会一直覆盖同一个 Release。若你发现下载到的还是旧版，
+            > 请改从 `v${{ env.APP_VERSION }}` 标签下载（每个版本一个全新链接，绝不会拿到旧包）。
 
             ### 下载哪个？
             - **xiangqi-overlay-release.apk** —— 正式版（推荐，装这个）
@@ -127,12 +150,43 @@ jobs:
             ### 安装步骤
             1. 手机浏览器打开本页面，点上面的 APK 下载
             2. 提示"未知来源"时选择允许
-            3. 安装后打开 App，按引导依次开启：悬浮窗权限、截屏权限
-            4. 进象棋 App 开一局新棋，悬浮窗会自动识别棋盘（无需手动标定）
+            3. 安装后打开 App，**首屏会显示当前版本号**，先确认版本对得上
+            4. 按引导依次开启：悬浮窗权限、截屏权限
+            5. 进象棋 App 开一局新棋，悬浮窗会自动识别棋盘（无需手动标定）
 
             ### 系统要求
             - Android 10（API 29）及以上
             - 手机 CPU 需为 arm64（2017 年之后的机型基本都是）
+          files: |
+            out/xiangqi-overlay-release.apk
+            out/xiangqi-overlay-debug.apk
+          draft: false
+          prerelease: false
+          fail_on_unmatched_files: true
+
+      # 每个版本一个独立标签：URL 全新，手机端不可能命中旧缓存，
+      # 用户也不会再遇到「下载下来还是上一版」。
+      - name: Publish to Releases (version tag)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ env.APP_VERSION }}
+          name: 象棋悬浮窗助手 v${{ env.APP_VERSION }}
+          make_latest: 'true'
+          body: |
+            ## 中国象棋悬浮窗助手 v${{ env.APP_VERSION }}
+
+            构建版本：`${{ github.sha }}`
+            versionCode：${{ env.APP_VERSION_CODE }}
+            签名指纹（SHA-256）：`${{ env.SIGN_SHA256 }}`
+
+            ### 下载
+            - **xiangqi-overlay-release.apk** —— 正式版（推荐）
+
+            装好后打开 App，**首屏会直接显示「当前版本：${{ env.APP_VERSION }}」**，
+            与这里对得上就说明装的是这一版。
+
+            ### 系统要求
+            - Android 10（API 29）及以上，CPU arm64
           files: |
             out/xiangqi-overlay-release.apk
             out/xiangqi-overlay-debug.apk
@@ -155,6 +209,8 @@ jobs:
             echo "- run_id: ${{ github.run_id }}"
             echo "- run_attempt: ${{ github.run_attempt }}"
             echo "- sha: ${{ github.sha }}"
+            echo "- app_version: ${{ env.APP_VERSION }} (${{ env.APP_VERSION_CODE }})"
+            echo "- apk_signature_sha256: ${{ env.SIGN_SHA256 }}"
             echo "- ref: ${{ github.ref }}"
             echo "- time_utc: $(date -u +%FT%TZ)"
             echo ""
@@ -170,6 +226,13 @@ jobs:
             echo '## 日志末尾 200 行'
             echo '```'
             if [ -f ci-build.log ]; then tail -200 ci-build.log; fi
+            echo '```'
+            echo ""
+            echo '## Releases 资产实况（用来确认资产有没有真的被替换）'
+            echo '```'
+            curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+              "https://api.github.com/repos/${{ github.repository }}/releases?per_page=6" \
+              | jq -r '.[] | "tag=\(.tag_name) | assets=" + ([.assets[] | "\(.name) \(.size)B up=\(.updated_at)"] | join(" ; "))' 2>&1 | head -12
             echo '```'
             echo ""
             echo '## 关键文件是否存在'

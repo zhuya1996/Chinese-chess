@@ -26,6 +26,16 @@
             android:text="@string/subtitle"
             style="@style/Body" />
 
+        <!-- 版本号直接显示在首屏：用户装完新版必须能一眼确认装的是哪一版 -->
+        <TextView
+            android:id="@+id/tvVersion"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:textColor="@color/text_secondary"
+            android:textSize="13sp"
+            android:textStyle="bold" />
+
         <TextView
             android:id="@+id/tvAbiWarning"
             android:layout_width="match_parent"
