@@ -127,6 +127,9 @@ public final class XiangqiRecognizer {
         /** 对手刚走的那步 {fromRow, fromCol, toRow, toCol}。 */
         public int[] lastMove;
         public String lastMoveText = "";
+        /** v1.7：置信度过低或棋子数量不合法——多半是有东西遮挡了棋盘，
+         *  服务端据此自动收起面板/清除箭头。 */
+        public boolean seriousMisread;
     }
 
     // ---------------------------------------------------------------- 主流程
@@ -173,11 +176,15 @@ public final class XiangqiRecognizer {
         r.fen = candidate.toFen();
 
         if (confidence < MIN_CONFIDENCE) {
+            r.seriousMisread = true;
             reject(r, String.format("识别置信度偏低（%.0f%%），请确认棋盘完整、无遮挡、无弹窗", confidence * 100));
             return r;
         }
-        if (!isBoardShapeValid(board)) {
-            reject(r, "棋子数量不合法，可能认错了棋子，请在标定时使用标准开局画面");
+        String violation = shapeViolation(board);
+        if (violation != null) {
+            r.seriousMisread = true;
+            reject(r, "棋子数量不合法（" + violation
+                    + "）。多半有东西挡住了棋盘边缘——如本助手面板或箭头，点「收起」或稍等 1 秒会自动让开");
             return r;
         }
 
@@ -673,7 +680,8 @@ public final class XiangqiRecognizer {
                 + (9 - move[2]);
     }
 
-    private static boolean isBoardShapeValid(char[][] board) {
+    /** 校验棋子数量；返回 null 表示合法，否则返回超限描述（如「帥×2、炮×3」）。 */
+    private static String shapeViolation(char[][] board) {
         int[] count = new int[128];
         for (int r = 0; r < Position.ROWS; r++) {
             for (int c = 0; c < Position.COLS; c++) {
@@ -683,15 +691,51 @@ public final class XiangqiRecognizer {
                 }
             }
         }
-        if (count['K'] != 1 || count['k'] != 1) {
-            return false;
+        StringBuilder sb = new StringBuilder();
+        appendViolation(sb, count['K'] != 1, pieceName('K'), count['K']);
+        appendViolation(sb, count['k'] != 1, pieceName('k'), count['k']);
+        appendViolation(sb, count['A'] > 2, pieceName('A'), count['A']);
+        appendViolation(sb, count['a'] > 2, pieceName('a'), count['a']);
+        appendViolation(sb, count['B'] > 2, pieceName('B'), count['B']);
+        appendViolation(sb, count['b'] > 2, pieceName('b'), count['b']);
+        appendViolation(sb, count['N'] > 2, pieceName('N'), count['N']);
+        appendViolation(sb, count['n'] > 2, pieceName('n'), count['n']);
+        appendViolation(sb, count['R'] > 2, pieceName('R'), count['R']);
+        appendViolation(sb, count['r'] > 2, pieceName('r'), count['r']);
+        appendViolation(sb, count['C'] > 2, pieceName('C'), count['C']);
+        appendViolation(sb, count['c'] > 2, pieceName('c'), count['c']);
+        appendViolation(sb, count['P'] > 5, pieceName('P'), count['P']);
+        appendViolation(sb, count['p'] > 5, pieceName('p'), count['p']);
+        return sb.length() == 0 ? null : sb.toString();
+    }
+
+    private static void appendViolation(StringBuilder sb, boolean bad, String name, int n) {
+        if (bad) {
+            if (sb.length() > 0) {
+                sb.append("、");
+            }
+            sb.append(name).append("×").append(n);
         }
-        return count['A'] <= 2 && count['a'] <= 2
-                && count['B'] <= 2 && count['b'] <= 2
-                && count['N'] <= 2 && count['n'] <= 2
-                && count['R'] <= 2 && count['r'] <= 2
-                && count['C'] <= 2 && count['c'] <= 2
-                && count['P'] <= 5 && count['p'] <= 5;
+    }
+
+    private static String pieceName(char p) {
+        switch (p) {
+            case 'K': return "帥";
+            case 'k': return "將";
+            case 'A': return "仕";
+            case 'a': return "士";
+            case 'B': return "相";
+            case 'b': return "象";
+            case 'N': return "傌";
+            case 'n': return "馬";
+            case 'R': return "俥";
+            case 'r': return "車";
+            case 'C': return "炮";
+            case 'c': return "砲";
+            case 'P': return "兵";
+            case 'p': return "卒";
+            default: return String.valueOf(p);
+        }
     }
 
     /** 估计「轮到谁走」的指示区（棋盘上/下方各一条）。 */

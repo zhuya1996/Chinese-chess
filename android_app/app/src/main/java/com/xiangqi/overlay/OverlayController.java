@@ -61,6 +61,10 @@ public final class OverlayController {
     private boolean collapsed;
     private int dragOffsetX;
     private int dragOffsetY;
+    /** 展开面板的底边不得超过的屏幕 y 坐标（棋盘上沿-边距）；<=0 表示不限制。
+     *  v1.7：面板展开时盖住棋盘顶行，白色面板边缘会污染识别图块，
+     *  把空位认成幻影棋子（真机已复现「棋子数量不合法」死循环）。 */
+    private int maxPanelBottom = -1;
 
     // ---- 标定层：全屏可触摸悬浮窗，内嵌 CalibrationView ----
     private View calibLayer;
@@ -217,6 +221,7 @@ public final class OverlayController {
                 case MotionEvent.ACTION_MOVE:
                     panelParams.x = (int) event.getRawX() - dragOffsetX;
                     panelParams.y = (int) event.getRawY() - dragOffsetY;
+                    clampPanelBottom();
                     try {
                         wm.updateViewLayout(panel, panelParams);
                     } catch (Exception ignored) {
@@ -258,6 +263,12 @@ public final class OverlayController {
         if (tvToggle != null) {
             tvToggle.setText(value ? "展开" : "收起");
         }
+        if (!value) {
+            // 展开：布局完成后把底边压回棋盘上沿之内
+            if (panel != null) {
+                panel.post(this::clampPanelBottom);
+            }
+        }
         relayout();
     }
 
@@ -268,6 +279,57 @@ public final class OverlayController {
             } catch (Exception ignored) {
             }
         }
+    }
+
+    /** 设置展开面板底边的最高允许位置（屏幕 y）。棋盘标定后由服务调用。 */
+    public void setPanelMaxBottom(int y) {
+        maxPanelBottom = y;
+        if (y <= 0 || panel == null) {
+            return;
+        }
+        // 面板必须 post 到布局完成后才知道自己的高度
+        panel.post(() -> {
+            if (panel == null) {
+                return;
+            }
+            int h = panel.getHeight();
+            if (h > 0 && maxPanelBottom > 0 && maxPanelBottom < h + 60 && !collapsed) {
+                // 上方空间放不下完整面板：自动收起，避免遮挡棋盘
+                setCollapsed(true);
+                return;
+            }
+            clampPanelBottom();
+        });
+    }
+
+    /** 把面板底边压回 maxPanelBottom 之内（拖动/布局变化时调用）。 */
+    private void clampPanelBottom() {
+        if (maxPanelBottom <= 0 || panel == null || collapsed) {
+            return;
+        }
+        int h = panel.getHeight();
+        if (h <= 0) {
+            return;
+        }
+        int maxY = Math.max(0, maxPanelBottom - h);
+        if (panelParams.y > maxY) {
+            panelParams.y = maxY;
+        }
+    }
+
+    public boolean isPanelExpanded() {
+        return shown && !collapsed;
+    }
+
+    /** 自动收起面板（识别自愈用）。 */
+    public void collapsePanel() {
+        if (!collapsed) {
+            setCollapsed(true);
+        }
+    }
+
+    public boolean isArrowShown() {
+        return arrow != null && arrow.hasMarks();
     }
 
     /** 更新面板文字。必须在主线程调用。 */

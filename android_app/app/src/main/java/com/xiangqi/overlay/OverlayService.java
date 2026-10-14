@@ -143,6 +143,21 @@ public final class OverlayService extends Service {
     /** 标定完成后重新加载档案（模板、四角、我方颜色）。 */
     public void applyProfile() {
         recognizer.setProfile(profile);
+        // v1.7：标定完成后，把展开面板的底边限制在棋盘上沿之上，
+        // 防止面板盖住棋盘顶行导致幻影棋子（真机复现过死循环）。
+        if (profile.isCalibrated() && overlay != null) {
+            float[] c = profile.cornersRel;
+            android.util.DisplayMetrics dm = getResources().getDisplayMetrics();
+            int screenH = dm.heightPixels;
+            float top = Math.min(Math.min(c[1], c[3]), Math.min(c[5], c[7]));
+            int boardTopPx = (int) (top * screenH) - 24;
+            final int limit = boardTopPx;
+            main.post(() -> {
+                if (overlay != null) {
+                    overlay.setPanelMaxBottom(limit);
+                }
+            });
+        }
     }
 
     public boolean isEngineReady() {
@@ -401,6 +416,9 @@ public final class OverlayService extends Service {
     /** 上次自动识别棋盘的时间（限频用）。 */
     private volatile long lastAutoCalibAttempt;
 
+    /** 连续严重误读（数量不合法/置信度过低）计数，用于自愈收起面板。 */
+    private int misreadCount;
+
     /**
      * 自动识别棋盘并生成模板。在识别线程调用，识别失败静默返回
      * （面板会持续提示，用户也可以走手动标定）。
@@ -601,10 +619,35 @@ public final class OverlayService extends Service {
                 XiangqiRecognizer.Result r = recognizer.recognize(frame);
 
                 if (!r.accepted) {
+                    // v1.7 自愈：严重误读（数量不合法/置信度过低）多半是
+                    // 自己的面板或箭头挡住了棋盘 —— 清箭头，连续多次则收起面板。
+                    if (r.seriousMisread) {
+                        misreadCount++;
+                        final boolean arrowShown = overlay != null && overlay.isArrowShown();
+                        if (arrowShown) {
+                            main.post(() -> {
+                                if (overlay != null) {
+                                    overlay.clearArrow();
+                                }
+                            });
+                        }
+                        if (misreadCount >= 8 && overlay != null && overlay.isPanelExpanded()) {
+                            misreadCount = 0;
+                            main.post(() -> {
+                                if (overlay != null) {
+                                    overlay.collapsePanel();
+                                }
+                            });
+                            statusToast("面板可能挡住了棋盘，已自动收起；点「展开」可随时查看建议");
+                        }
+                    } else {
+                        misreadCount = 0;
+                    }
                     updatePanel(r.rejectReason);
                     Thread.sleep(250);
                     continue;
                 }
+                misreadCount = 0;
 
                 if (isMyTurn(r)) {
                     analyze(r);

@@ -54,6 +54,10 @@ public final class ArrowView extends View {
         invalidate();
     }
 
+    public boolean hasMarks() {
+        return !marks.isEmpty();
+    }
+
     public void clearMarks() {
         if (marks.isEmpty()) {
             return;
