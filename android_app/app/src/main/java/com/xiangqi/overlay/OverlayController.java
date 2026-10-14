@@ -329,7 +329,7 @@ public final class OverlayController {
     public boolean showCalibration(android.graphics.Bitmap frame, float[] cornersRel,
                                    boolean blackBottom) {
         if (!shown || wm == null) {
-            return;
+            return false;
         }
         if (calibLayer != null) {
             hideCalibration();
