@@ -369,11 +369,19 @@ public final class XiangqiRecognizer {
             return;
         }
         double[] corners = profile.absoluteCorners(frame.width, frame.height);
-        float cellH = (float) (((corners[5] - corners[1]) + (corners[7] - corners[3])) / 18.0);
-        float cellW = (float) (((corners[2] - corners[0]) + (corners[6] - corners[4])) / 16.0);
+        // v2.0：格子尺寸改用四角「包围盒」估算——对四角的存储顺序/朝向都不敏感。
+        // 旧写法 ((c5-c1)+(c7-c3))/18 隐含假设角点顺序是 左上/右上/右下/左下，
+        // 自动识别或吸附若给出别的顺序（如绕向相反、180° 旋转），会算出 0 或负值，
+        // 导致 half<8 而静默跳过颜色校正（真机已复现「跳过(采样窗过小)」）。
+        double minX = Math.min(Math.min(corners[0], corners[2]), Math.min(corners[4], corners[6]));
+        double maxX = Math.max(Math.max(corners[0], corners[2]), Math.max(corners[4], corners[6]));
+        double minY = Math.min(Math.min(corners[1], corners[3]), Math.min(corners[5], corners[7]));
+        double maxY = Math.max(Math.max(corners[1], corners[3]), Math.max(corners[5], corners[7]));
+        float cellW = (float) ((maxX - minX) / 8.0);
+        float cellH = (float) ((maxY - minY) / 9.0);
         float half = 0.45f * Math.min(cellW, cellH);
         if (half < 8) {
-            lastColorCorrInfo = "跳过(采样窗过小)";
+            lastColorCorrInfo = String.format("跳过(采样窗过小 格%.0fx%.0f)", cellW, cellH);
             return;
         }
 

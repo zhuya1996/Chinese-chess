@@ -113,7 +113,7 @@ public final class OverlayController {
                 WindowManager.LayoutParams.MATCH_PARENT,
                 WindowManager.LayoutParams.MATCH_PARENT,
                 type,
-                common | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+                common | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE | FLAG_LAYOUT,
                 PixelFormat.TRANSLUCENT);
         try {
             wm.addView(arrow, arrowParams);
@@ -129,7 +129,7 @@ public final class OverlayController {
                 WindowManager.LayoutParams.WRAP_CONTENT,
                 WindowManager.LayoutParams.WRAP_CONTENT,
                 type,
-                common | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+                common | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL | FLAG_LAYOUT,
                 PixelFormat.TRANSLUCENT);
         panelParams.gravity = Gravity.TOP | Gravity.START;
         panelParams.x = 24;
