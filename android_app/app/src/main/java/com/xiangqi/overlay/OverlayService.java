@@ -56,14 +56,70 @@ public final class OverlayService extends Service {
     private volatile Position analyzingPosition;
     private volatile String analyzingOpponent = "";
 
-    /** 给标定界面用的最新截图。 */
-    private volatile Bitmap calibFrame;
-
     /** 最近一次失败原因，供诊断面板显示。 */
     private volatile String lastError;
 
     public String getLastError() {
         return lastError;
+    }
+
+    // ------------------------------------------------------------- 冻结帧
+    // 标定必须在「象棋 App 在前台」时截到的画面上做。但标定界面本身是全屏
+    // Activity，一旦它打开，再现场截屏只会截到它自己 —— 自己截自己，
+    // 标定永远不可能成功。
+    //
+    // 所以这里常驻保存「最近一张来自其他 App 的画面」，标定界面直接取用。
+    // 标定只关心棋盘几何，所以画面哪怕是几百毫秒前的也完全够用。
+
+    /** 本 App 自己的界面是否在前台。为 true 时不采样冻结帧。 */
+    private static volatile boolean uiForeground = true;
+
+    public static void setUiForeground(boolean value) {
+        uiForeground = value;
+    }
+
+    public static boolean isUiForeground() {
+        return uiForeground;
+    }
+
+    private final Object frameLock = new Object();
+    private int[] frozenArgb;
+    private int frozenWidth;
+    private int frozenHeight;
+    private long frozenAt;
+
+    /** 冻结帧是否已经可用（用于给用户提示该怎么标定）。 */
+    public boolean hasFrozenFrame() {
+        synchronized (frameLock) {
+            return frozenArgb != null;
+        }
+    }
+
+    /** 记录一帧「其他 App 在前台」时的画面。 */
+    private void rememberFrame(int[] argb, int w, int h) {
+        int n = w * h;
+        synchronized (frameLock) {
+            if (frozenArgb == null || frozenArgb.length != n) {
+                frozenArgb = new int[n];
+                frozenWidth = w;
+                frozenHeight = h;
+            }
+            System.arraycopy(argb, 0, frozenArgb, 0, n);
+            frozenAt = System.currentTimeMillis();
+        }
+    }
+
+    /** 节流采样：最快每 500ms 更新一次，避免无谓的整屏内存拷贝。 */
+    private void rememberFrameThrottled(ScreenCapture.Snapshot s) {
+        if (uiForeground) {
+            return;
+        }
+        synchronized (frameLock) {
+            if (System.currentTimeMillis() - frozenAt < 500) {
+                return;
+            }
+        }
+        rememberFrame(s.argb, s.width, s.height);
     }
 
     /** 截屏管线是否真的在跑（区别于「服务对象存在」）。 */
@@ -105,14 +161,37 @@ public final class OverlayService extends Service {
         return recognizer.lastRejectReason;
     }
 
-    /** 给标定界面截一帧。服务未运行时返回 null。 */
+    /**
+     * 给标定界面用的画面：返回最近一张「来自其他 App（即象棋 App）」的冻结帧。
+     * <p>
+     * 刻意不在这里现场截屏 —— 标定界面是全屏 Activity，现场截只会截到它自己，
+     * 那样棋盘永远不会出现在标定画面上。
+     *
+     * @return null 表示还没有采到过象棋 App 的画面
+     */
     public static Bitmap takeCalibrationFrame() {
         OverlayService s = instance;
-        if (s == null || s.capture == null || !s.capture.isRunning()) {
+        return s == null ? null : s.frozenBitmap();
+    }
+
+    private Bitmap frozenBitmap() {
+        int[] copy;
+        int w;
+        int h;
+        synchronized (frameLock) {
+            if (frozenArgb == null || frozenWidth <= 0 || frozenHeight <= 0) {
+                return null;
+            }
+            copy = frozenArgb;
+            w = frozenWidth;
+            h = frozenHeight;
+        }
+        try {
+            // createBitmap 会复制数组内容，所以后续覆盖 frozenArgb 不影响它
+            return Bitmap.createBitmap(copy, 0, w, w, h, Bitmap.Config.ARGB_8888);
+        } catch (Throwable e) {
             return null;
         }
-        ScreenCapture.Snapshot snap = s.capture.grab(null);
-        return snap == null ? null : snap.bitmap;
     }
 
     // ------------------------------------------------------------ 生命周期
@@ -223,21 +302,40 @@ public final class OverlayService extends Service {
             fail(err);
             return;
         }
-        if (!engine.isRunning()) {
-            if (!DeviceCompat.engineSupported()) {
-                lastError = "引擎需要 Android 10 及以上，当前系统 "
-                        + DeviceCompat.androidVersion() + " 无法运行";
-                statusToast(lastError);
-            } else {
-                String engineErr = engine.start(this);
-                if (engineErr != null) {
-                    lastError = "引擎启动失败：" + engineErr;
-                    statusToast(lastError);
-                }
-            }
-        }
+        // 顺序很重要：先把悬浮窗挂出来，再启动引擎。
+        // 引擎起不来只是「暂时没有建议」，不该连累悬浮窗；
+        // 而悬浮窗不显示，用户就彻底没得用了。
         showOverlay();
+        startEngineQuietly();
         startLoop();
+    }
+
+    /**
+     * 启动本地引擎，并吃掉所有异常。
+     * <p>
+     * 引擎是「功能」而不是「前提」：它失败时，截屏、标定、悬浮窗都应该照常可用，
+     * 用户至少能先把棋盘标定好，再看清失败原因。
+     */
+    private void startEngineQuietly() {
+        if (engine.isRunning()) {
+            return;
+        }
+        if (!DeviceCompat.engineSupported()) {
+            lastError = "引擎需要 Android 10 及以上，当前系统 "
+                    + DeviceCompat.androidVersion() + " 无法运行";
+            statusToast(lastError);
+            return;
+        }
+        try {
+            String engineErr = engine.start(this);
+            if (engineErr != null) {
+                lastError = "引擎启动失败：" + engineErr;
+                statusToast(lastError);
+            }
+        } catch (Throwable t) {
+            lastError = "引擎启动失败：" + describe(t);
+            statusToast(lastError);
+        }
     }
 
     private void showOverlay() {
@@ -307,6 +405,12 @@ public final class OverlayService extends Service {
                     Thread.sleep(400);
                     continue;
                 }
+                if (uiForeground) {
+                    // 本 App 自己的界面在前台：截到的会是它自己，既没有识别价值，
+                    // 也会污染标定时要用的冻结帧，所以整段跳过。
+                    Thread.sleep(500);
+                    continue;
+                }
                 if (capture == null || !capture.isRunning()) {
                     updatePanel("录屏已停止，请重新启动辅助");
                     Thread.sleep(1200);
@@ -324,13 +428,15 @@ public final class OverlayService extends Service {
                     Thread.sleep(1000);
                     continue;
                 }
+                // 无论有没有标定，都要留存画面：标定本身就需要这张冻结帧。
+                rememberFrameThrottled(s);
+
                 if (!profile.isCalibrated()) {
                     updatePanel("请先点「标定」框住棋盘四角");
                     Thread.sleep(700);
                     continue;
                 }
 
-                calibFrame = s.bitmap;
                 XiangqiRecognizer.Frame frame = new XiangqiRecognizer.Frame(
                         s.gray, s.argb, s.width, s.height, s.rowStride);
                 XiangqiRecognizer.Result r = recognizer.recognize(frame);

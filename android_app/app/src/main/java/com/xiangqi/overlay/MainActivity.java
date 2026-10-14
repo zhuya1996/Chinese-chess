@@ -115,11 +115,13 @@ public final class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         showing = true;
+        OverlayService.setUiForeground(true);
         refresh();
     }
 
     @Override
     protected void onPause() {
+        OverlayService.setUiForeground(false);
         super.onPause();
         showing = false;
         main.removeCallbacks(refreshTask);
@@ -210,6 +212,10 @@ public final class MainActivity extends Activity {
     private void calibrate() {
         OverlayService s = OverlayService.get();
         if (s != null && s.isActive() && s.isCaptureRunning()) {
+            if (!s.hasFrozenFrame()) {
+                toast("还没采到象棋 App 的画面。请先切到象棋 App 打开一盘棋、"
+                        + "让棋盘完整显示几秒，再回来标定。");
+            }
             openCalibration();
             return;
         }
@@ -303,8 +309,9 @@ public final class MainActivity extends Activity {
         StringBuilder sb = new StringBuilder();
         if (!active) {
             sb.append("未启动。\n");
-            sb.append("操作顺序：① 开悬浮窗权限 → ② 点「标定棋盘四角」→ ③ 切到象棋 App 下棋。");
-            sb.append("\n\n提示：点「标定」时如果辅助还没启动，会自动先帮你启动。");
+            sb.append("步骤：① 开悬浮窗权限 → ② 点「启动悬浮窗辅助」→ "
+                    + "③ 切到象棋 App 打开一盘棋 → ④ 点悬浮窗上的「标定」框住棋盘四角 → ⑤ 开始下棋。");
+            sb.append("\n\n提示：直接点「标定棋盘四角」也可以，会自动先帮你启动辅助。");
         } else {
             sb.append("运行中。\n");
             sb.append("· 截屏：").append(s.isCaptureRunning() ? "正常" : "未运行");

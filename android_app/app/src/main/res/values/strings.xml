@@ -18,7 +18,7 @@
     <string name="action_skip">可跳过</string>
 
     <string name="card_setup">② 标定棋盘</string>
-    <string name="setup_hint">先在象棋 App 里进入对局、确保棋盘完整显示且处于开局状态，再点下面按钮框住棋盘四角。每个象棋 App 只需标定一次。</string>
+    <string name="setup_hint">标定要在象棋 App 的棋盘画面上做：先在象棋 App 里打开一盘棋、让棋盘完整显示几秒，再点下面按钮框住棋盘四角。每个象棋 App 只需标定一次。</string>
     <string name="action_calibrate">标定棋盘四角</string>
 
     <string name="card_run">③ 开始辅助</string>
@@ -30,7 +30,7 @@
     <string name="status_idle">未启动</string>
 
     <string name="card_help">使用说明</string>
-    <string name="help_text">1. 打开象棋 App，进入对局，让棋盘完整显示在屏幕上。\n2. 回到本 App，点「标定棋盘四角」，拖动四个角点框住棋盘的四个角（最外圈交叉点），选择己方颜色，确认。\n3. 回到本 App，点「启动悬浮窗辅助」，在系统弹窗里允许「开始录制或投放」。\n4. 切回象棋 App 开始下棋。悬浮窗会自动识别局势：对手走完一步后，它会给出建议。\n5. 你照着建议在象棋 App 里手动落子即可，它会继续监控。\n\n注意：本工具只提供建议，不会代替你落子。请遵守游戏平台的使用条款，建议仅在人机对战或练习模式中使用。</string>
+    <string name="help_text">推荐按这个顺序操作：\n\n① 打开象棋 App，进入一盘棋，让棋盘完整显示在屏幕上。\n② 点悬浮窗上的「标定」按钮（悬浮窗小面板上有），拖动 4 个角点框住棋盘最外圈的四个交叉点，确认。每个象棋 App 只需标定一次。\n③ 之后正常下棋。对手每落一子，悬浮窗会自动识别局势，并告诉你怎么走。\n④ 你照着建议在象棋 App 里手动落子即可，它会继续跟。\n\n如果悬浮窗还没出来，请先回到本界面点「启动悬浮窗辅助」。\n\n注意：本工具只提供建议，不会代替你落子。请遵守游戏平台的使用条款，建议仅在人机对战或练习模式中使用。</string>
 
     <string name="abort_abi">这台手机不是 64 位 ARM 架构，当前版本暂不支持。请把手机型号反馈给开发者以补编对应架构的引擎。</string>
 
@@ -51,9 +51,12 @@
     <string name="calib_instruction">拖动 4 个角点，框住棋盘最外圈的四个交叉点</string>
     <string name="calib_bottom_red">我方是红方（红在下）</string>
     <string name="calib_bottom_black">我方是黑方（黑在下）</string>
-    <string name="calib_recapture">重新截图</string>
+    <string name="calib_recapture">重新抓取</string>
     <string name="calib_confirm">确认标定</string>
-    <string name="calib_need_frame">还没有截到画面，请先启动辅助服务</string>
+    <string name="calib_need_frame">还没有棋盘画面，无法标定</string>
+    <string name="calib_no_frame">还没有采到象棋 App 的画面。\n\n请这样做：\n① 切到象棋 App，打开一盘棋，让棋盘完整显示\n② 停留两三秒，让后台截到画面\n③ 再回到本界面（会自动补上画面），或点下面「重新抓取」\n\n更省事的做法：直接在悬浮窗上点「标定」按钮。</string>
+    <string name="calib_frame_ready">已载入棋盘画面。请拖动 4 个角点，框住棋盘最外圈的四个交叉点，然后点「确认标定」。</string>
+    <string name="calib_service_gone">后台服务已停止，请回到主界面重新启动辅助</string>
     <string name="calib_ok">标定成功，已保存模板</string>
     <string name="calib_zoom_hint">双指缩放 / 拖动查看细节</string>
 
