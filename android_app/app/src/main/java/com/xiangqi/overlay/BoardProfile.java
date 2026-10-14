@@ -203,7 +203,10 @@ public final class BoardProfile {
     private static JSONArray toJSONArray(float[] v) {
         JSONArray a = new JSONArray();
         for (float x : v) {
-            a.put(x);
+            // 注意：必须显式装箱成 Double，走 put(Object) 重载。
+            // 若直接传 float，会精确匹配到 put(double)，而这个重载会抛受检的
+            // JSONException，导致本方法无法编译（除非再加 try-catch）。
+            a.put(Double.valueOf(x));
         }
         return a;
     }
