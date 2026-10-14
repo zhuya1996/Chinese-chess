@@ -123,6 +123,17 @@ jobs:
           path: out/*.apk
           retention-days: 90
 
+      # 先彻底删掉固定标签的旧 Release（含资产），再重建。
+      # 不依赖上传组件是否覆盖同名资产 —— 这是「下载下来的还是旧版」的最硬保险。
+      - name: Delete stale fixed-tag release
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete apk-latest --yes --cleanup-tag --repo "${{ github.repository }}" \
+            && echo "已删除旧的 apk-latest Release（含旧资产）" \
+            || echo "没有旧的 apk-latest Release，跳过"
+
       # ---- 发布到 Releases ----
       # 固定标签 apk-latest：方便老文档/老链接继续可用。
       # 注意：这个标签是「同一个 Release 反复覆盖资产」，某些情况下
