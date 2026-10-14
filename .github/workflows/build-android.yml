@@ -7,13 +7,14 @@ on:
       - main
   workflow_dispatch:
 
-# 需要 contents:write 才能把 APK 发到 Releases 页面
+# 需要 contents:write 才能把 APK 发到 Releases 页面、并把构建状态推回分支
 permissions:
   contents: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
 
     steps:
       - name: Checkout code
@@ -72,15 +73,19 @@ jobs:
             echo "错误：缺少神经网络 pikafish.nnue"; exit 1
           fi
 
+      # set -o pipefail + tee：既能实时看到输出，又把完整日志留到文件里，
+      # 失败时由最后一步推回仓库，方便在没有 GitHub 网页访问的环境下定位。
       - name: Build release APK
         run: |
+          set -o pipefail
           cd android_app
-          gradle :app:assembleRelease --no-daemon --stacktrace
+          gradle :app:assembleRelease --no-daemon --stacktrace 2>&1 | tee ../ci-build.log
 
       - name: Build debug APK (备用)
         run: |
+          set -o pipefail
           cd android_app
-          gradle :app:assembleDebug --no-daemon
+          gradle :app:assembleDebug --no-daemon 2>&1 | tee -a ../ci-build.log
 
       - name: Collect and rename APKs
         run: |
@@ -123,7 +128,7 @@ jobs:
             1. 手机浏览器打开本页面，点上面的 APK 下载
             2. 提示"未知来源"时选择允许
             3. 安装后打开 App，按引导依次开启：悬浮窗权限、截屏权限
-            4. 先在象棋 App 里做一次棋盘四角标定，之后即可使用
+            4. 进象棋 App 开一局新棋，悬浮窗会自动识别棋盘（无需手动标定）
 
             ### 系统要求
             - Android 10（API 29）及以上
@@ -134,3 +139,51 @@ jobs:
           draft: false
           prerelease: false
           fail_on_unmatched_files: true
+
+      # 无论成功失败，都把结论 + 关键错误行推回 ci-status 分支。
+      # 这样在没有 GitHub 网页/API 访问的环境里，用 git 就能读到构建结果。
+      - name: Report build status back to repo (remote diagnosis)
+        if: always()
+        continue-on-error: true
+        run: |
+          set +e
+          mkdir -p ci
+          {
+            echo "# 构建状态"
+            echo ""
+            echo "- job_status: ${{ job.status }}"
+            echo "- run_id: ${{ github.run_id }}"
+            echo "- run_attempt: ${{ github.run_attempt }}"
+            echo "- sha: ${{ github.sha }}"
+            echo "- ref: ${{ github.ref }}"
+            echo "- time_utc: $(date -u +%FT%TZ)"
+            echo ""
+            echo '## 关键错误行'
+            echo '```'
+            if [ -f ci-build.log ]; then
+              grep -nE "error:|错误|FAILURE:|FAILED|What went wrong|Caused by:|BUILD FAILED|Execution failed for|Unresolved reference|incompatible types|missing return|symbol:|location:|Could not (resolve|find|determine)" ci-build.log | head -250
+            else
+              echo "(未生成 gradle 日志 —— 失败发生在编译之前的步骤)"
+            fi
+            echo '```'
+            echo ""
+            echo '## 日志末尾 200 行'
+            echo '```'
+            if [ -f ci-build.log ]; then tail -200 ci-build.log; fi
+            echo '```'
+            echo ""
+            echo '## 关键文件是否存在'
+            echo '```'
+            ls -lh android_app/app/src/main/jniLibs/arm64-v8a/ 2>&1
+            ls -lh android_app/app/src/main/assets/ 2>&1
+            ls -lh out/ 2>&1
+            echo '```'
+          } > ci/LAST_STATUS.md
+          wc -c ci/LAST_STATUS.md
+
+          git config user.name "ci-bot"
+          git config user.email "ci-bot@users.noreply.github.com"
+          git checkout -B ci-status
+          git add -f ci/LAST_STATUS.md
+          git commit -m "ci: 构建状态 ${{ job.status }} (${{ github.sha }}) [skip ci]"
+          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" ci-status
