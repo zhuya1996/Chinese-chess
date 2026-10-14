@@ -450,15 +450,32 @@ public final class XiangqiRecognizer {
         }
         double threshold = (occMedian + empMedian) / 2.0;
 
+        // 逐点校验改成「先统计再报错」：失败时能说出具体错了几个点，
+        // 便于远程定位是角点偏了还是画面里有遮挡（v1.5）
+        int occBad = 0;
+        int occWorst = -1;
         for (int[] p : occupied) {
             if (occupancyScore(canonical, p[0], p[1], ref) <= threshold) {
-                return "该位置应该有棋子却认成空位，四角可能拖偏了，请调整后重试";
+                occBad++;
+                if (occWorst < 0) {
+                    occWorst = p[0] + 1;   // 记下第一个异常点的列号（1-9）
+                }
             }
         }
+        int empBad = 0;
+        int empWorst = -1;
         for (int[] p : empty) {
             if (occupancyScore(canonical, p[0], p[1], ref) >= threshold) {
-                return "该位置应该为空却认成有棋子，四角可能拖偏了，请调整后重试";
+                empBad++;
+                if (empWorst < 0) {
+                    empWorst = p[0] + 1;
+                }
             }
+        }
+        if (occBad + empBad > 0) {
+            return String.format("四角可能有偏差：%d 个该有棋子的点、%d 个空点判定异常"
+                            + "（首个异常点在第 %s 列）。请双指放大微调角点后重试",
+                    occBad, empBad, occWorst > 0 ? String.valueOf(occWorst) : String.valueOf(empWorst));
         }
         return null;
     }

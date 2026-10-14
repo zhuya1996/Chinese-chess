@@ -27,6 +27,21 @@ public final class Position {
     public final char[][] cells = new char[ROWS][COLS];
     public boolean redToMove = true;
 
+    /**
+     * 关键：Java 的 char 数组默认值是 '\0'，不是 '.'。
+     * 不在这里统一填充 EMPTY 的话，fromFen 只给有棋子的格子赋值，
+     * 空位就全是 '\0' —— 而 '\0' != '.'，于是：
+     *   ① validateInitialLayout 认为 90 个点全是「有棋子」→ 空位模板列表为空，
+     *      标定必然报「未能生成空位模板」（真机 v1.4 实测命中）；
+     *   ② diffMove 找不到「起点变空」→ 永远返回 null → 棋步识别失效；
+     *   ③ toFen 生成不出空位数字 → 喂给引擎的 FEN 是乱码。
+     */
+    public Position() {
+        for (int r = 0; r < ROWS; r++) {
+            java.util.Arrays.fill(cells[r], EMPTY);
+        }
+    }
+
     public static Position fromFen(String fen) {
         Position p = new Position();
         if (fen == null) {
@@ -63,7 +78,8 @@ public final class Position {
             StringBuilder row = new StringBuilder();
             for (int c = 0; c < COLS; c++) {
                 char p = cells[r][c];
-                if (p == EMPTY) {
+                // 兜底：万一有路径漏填空位（'\0'），也按空位处理，避免 FEN 出乱码
+                if (p == EMPTY || p == 0) {
                     empty++;
                 } else {
                     if (empty > 0) {
