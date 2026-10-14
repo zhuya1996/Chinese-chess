@@ -364,9 +364,9 @@ public final class XiangqiRecognizer {
         if (h == null || frame == null || frame.argb == null) {
             return;
         }
-        float[] corners = profile.absoluteCorners(frame.width, frame.height);
-        float cellH = ((corners[5] - corners[1]) + (corners[7] - corners[3])) / 18f;
-        float cellW = ((corners[2] - corners[0]) + (corners[6] - corners[4])) / 16f;
+        double[] corners = profile.absoluteCorners(frame.width, frame.height);
+        float cellH = (float) (((corners[5] - corners[1]) + (corners[7] - corners[3])) / 18.0);
+        float cellW = (float) (((corners[2] - corners[0]) + (corners[6] - corners[4])) / 16.0);
         float half = 0.45f * Math.min(cellW, cellH);
         if (half < 8) {
             return;
