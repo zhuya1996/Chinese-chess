@@ -349,14 +349,22 @@ public final class XiangqiRecognizer {
             return "没有可用的截图";
         }
         this.profile = target;
-        target.cornersRel[0] = cornersRel[0];
-        target.cornersRel[1] = cornersRel[1];
-        target.cornersRel[2] = cornersRel[2];
-        target.cornersRel[3] = cornersRel[3];
-        target.cornersRel[4] = cornersRel[4];
-        target.cornersRel[5] = cornersRel[5];
-        target.cornersRel[6] = cornersRel[6];
-        target.cornersRel[7] = cornersRel[7];
+
+        // v1.6：手动角点自动吸附 —— 用户只需大致框住棋盘，
+        // 这里在粗略四角附近重新搜索网格并精确对齐；找不到就沿用原角点。
+        float[] use = cornersRel;
+        try {
+            float[] snapped = BoardAutoDetect.refineNear(frame.gray, cornersRel);
+            if (snapped != null) {
+                use = snapped;
+            }
+        } catch (Throwable ignored) {
+            // 吸附失败不影响原流程
+        }
+
+        for (int i = 0; i < 8; i++) {
+            target.cornersRel[i] = use[i];
+        }
 
         double[] srcPts = target.absoluteCorners(frame.width, frame.height);
         GrayImage canonical = warpToCanonical(frame.gray, srcPts);
@@ -394,8 +402,8 @@ public final class XiangqiRecognizer {
         target.emptyTemplates.addAll(dedupe(emptyPool));
 
         // 行棋方指示区（棋盘上方与下方各一条）
-        int[] top = estimateTurnRegion(cornersRel, frame.width, frame.height, true);
-        int[] bottom = estimateTurnRegion(cornersRel, frame.width, frame.height, false);
+        int[] top = estimateTurnRegion(use, frame.width, frame.height, true);
+        int[] bottom = estimateTurnRegion(use, frame.width, frame.height, false);
         toRelative(top, frame.width, frame.height, target.turnTop);
         toRelative(bottom, frame.width, frame.height, target.turnBottom);
 

@@ -48,7 +48,7 @@
     <string name="overlay_btn_close">关闭</string>
 
     <string name="calib_layer_title">棋盘标定</string>
-    <string name="calib_instruction">拖动 4 个角点，框住棋盘最外圈的四个交叉点</string>
+    <string name="calib_instruction">大致框住棋盘即可，点确认时会自动精确对齐网格</string>
     <string name="calib_bottom_red">我方是红方（红在下）</string>
     <string name="calib_bottom_black">我方是黑方（黑在下）</string>
     <string name="calib_recapture">重新抓取</string>
