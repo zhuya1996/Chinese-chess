@@ -31,13 +31,24 @@ desktop.ini
 *.class
 bin/
 gen/
-out/
 .gradle/
 build/
 local.properties
 *.iml
 .externalNativeBuild
 .cxx/
+
+# ---- 重要例外：不要把 Android 的引擎资源过滤掉 ----
+# 上面 Python 段的 *.so 规则会误伤引擎二进制和神经网络，
+# 少了任何一个，编译出的 APK 里就没有象棋引擎，打开即不可用。
+!android_app/app/src/main/jniLibs/**/*.so
+!android_app/app/src/main/assets/*.nnue
+
+# Android 构建产物 / 本地签名证书（证书由 CI 生成，不进仓库）
+android_app/keystore/
+android_app/build/
+android_app/app/build/
+android_app/.gradle/
 
 # 大型压缩包
 *.7z

@@ -1,49 +1,66 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools"
-    package="com.xiangqi.aiassistant">
+    xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- 悬浮窗权限 -->
+    <!-- 悬浮窗：把提示盖在象棋 App 上层 -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
-    <!-- 网络权限 -->
-    <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- 前台服务：截屏识别必须常驻，否则会被系统杀掉 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission
+        android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION"
+        tools:targetApi="34" />
 
-    <!-- 允许 HTTP 明文传输（用于本地开发） -->
+    <!-- 前台服务的通知（Android 13+ 需要运行时授权） -->
+    <uses-permission
+        android:name="android.permission.POST_NOTIFICATIONS"
+        tools:targetApi="33" />
+
+    <!-- 识别过程中尽量不熄屏 -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+    <!-- 查询电池优化白名单（厂商保活引导用） -->
+    <uses-permission
+        android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"
+        tools:targetApi="23" />
+
     <application
+        android:name=".App"
         android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
-        android:supportsRtl="true"
-        android:theme="@style/Theme.XiangqiAI"
-        android:usesCleartextTraffic="true"
-        tools:targetApi="31">
+        android:largeHeap="true"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="false"
+        android:theme="@style/AppTheme">
 
-        <!-- 主界面 -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:label="@string/app_name"
-            android:theme="@style/Theme.XiangqiAI">
+            android:launchMode="singleTop"
+            android:screenOrientation="portrait">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
 
-        <!-- 设置界面 -->
+        <!-- 四角标定：显示截取到的画面，拖动四个角框住棋盘 -->
         <activity
-            android:name=".SettingsActivity"
+            android:name=".CalibrationActivity"
             android:exported="false"
-            android:label="设置"
-            android:parentActivityName=".MainActivity">
-        </activity>
+            android:label="@string/calibration_title"
+            android:launchMode="singleTop"
+            android:screenOrientation="portrait"
+            android:theme="@style/AppTheme.NoActionBar" />
 
-        <!-- 悬浮窗服务 -->
+        <!-- 核心前台服务：截屏 → 识别 → 引擎 → 悬浮窗 -->
         <service
-            android:name=".FloatingWindowService"
+            android:name=".OverlayService"
+            android:enabled="true"
             android:exported="false"
-            android:enabled="true" />
+            android:foregroundServiceType="mediaProjection" />
 
     </application>
 

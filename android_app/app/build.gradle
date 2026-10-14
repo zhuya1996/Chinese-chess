@@ -3,31 +3,82 @@ plugins {
 }
 
 android {
-    namespace 'com.xiangqi.aiassistant'
+    namespace 'com.xiangqi.overlay'
     compileSdk 34
 
     defaultConfig {
-        applicationId "com.xiangqi.aiassistant"
-        minSdk 24
+        applicationId "com.xiangqi.overlay"
+        minSdk 21          // Android 5.0 起，覆盖 MediaProjection 支持的全部版本
         targetSdk 34
         versionCode 1
         versionName "1.0"
+
+        // 引擎架构插槽：目前只有 arm64 版引擎。
+        // 以后要用 NDK 编出 32 位引擎，只需把 libpikafish.so 放到
+        // app/src/main/jniLibs/armeabi-v7a/ 并把下面一行改成：
+        //      abiFilters 'arm64-v8a', 'armeabi-v7a', 'x86_64'
+        // 代码一行都不用改。
+        ndk {
+            abiFilters 'arm64-v8a'
+        }
+    }
+
+    // ---------------------------------------------------------------- 签名
+    // CI（GitHub Actions）会用 keytool 生成一个自签名证书并缓存起来，
+    // 保证每次构建出的 APK 签名一致 —— 这样才能直接覆盖升级安装。
+    // 本地如果没有这个文件，release 会自动退回用 debug 签名，依然可正常构建。
+    def releaseKeyStore = rootProject.file('keystore/release.p12')
+    def hasReleaseKey = releaseKeyStore.exists()
+
+    signingConfigs {
+        release {
+            if (hasReleaseKey) {
+                storeFile releaseKeyStore
+                storeType 'PKCS12'
+                storePassword 'xiangqi2026'
+                keyAlias 'xiangqi'
+                keyPassword 'xiangqi2026'
+            }
+        }
     }
 
     buildTypes {
+        debug {
+            minifyEnabled false
+        }
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            // 有正式证书就用正式证书，没有就退回 debug 签名（保证一定能装）
+            signingConfig hasReleaseKey ? signingConfigs.release : signingConfigs.debug
         }
     }
 
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_1_8
-        targetCompatibility JavaVersion.VERSION_1_8
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
+    }
+
+    packaging {
+        jniLibs {
+            // 关键！必须让 .so 被解压到 nativeLibraryDir，
+            // 否则 Android 10+ 无法执行引擎进程（W^X 限制）。
+            useLegacyPackaging = true
+        }
+    }
+
+    androidResources {
+        // 神经网络文件 50MB，不要压缩，否则首次启动解压很慢
+        noCompress 'nnue'
+    }
+
+    lint {
+        abortOnError false
     }
 }
 
+// 本项目刻意不依赖任何第三方库（包括 OpenCV）。
+// 图像识别全部由 com.xiangqi.overlay.img 包下的纯 Java 代码实现，
+// 这样 APK 更小、构建更简单、且与 CPU 架构无关。
 dependencies {
-    implementation 'androidx.appcompat:appcompat:1.6.1'
-    implementation 'com.google.android.material:material:1.9.0'
 }

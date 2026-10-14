@@ -1,8 +1,4 @@
-// Top-level build file
+// 顶层构建脚本：只声明插件版本，不在这里配置具体模块
 plugins {
-    id 'com.android.application' version '8.1.0' apply false
-}
-
-task clean(type: Delete) {
-    delete rootProject.buildDir
+    id 'com.android.application' version '8.5.2' apply false
 }

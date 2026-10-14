@@ -1,16 +1,63 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">象棋AI助手</string>
-    <string name="server_url_hint">http://192.168.1.100:5000</string>
-    <string name="start_floating">启动悬浮窗</string>
-    <string name="stop_floating">停止悬浮窗</string>
-    <string name="settings">高级设置</string>
-    <string name="status_running">状态: 运行中 🟢</string>
-    <string name="status_stopped">状态: 已停止 ⚪</string>
-    <string name="notification_title">象棋AI助手</string>
-    <string name="notification_text">悬浮窗正在运行</string>
-    <string name="permission_required">需要悬浮窗权限才能使用</string>
-    <string name="service_started">悬浮窗已启动</string>
-    <string name="service_stopped">悬浮窗已停止</string>
-    <string name="enter_server_url">请输入服务器地址</string>
+    <string name="app_name">象棋助手</string>
+    <string name="calibration_title">棋盘标定</string>
+
+    <string name="title">象棋悬浮窗助手</string>
+    <string name="subtitle">自动读取棋局 · 实时给出建议 · 落子由你完成</string>
+
+    <string name="card_permission">① 先开权限</string>
+    <string name="perm_overlay">悬浮窗权限</string>
+    <string name="perm_overlay_desc">必须开启，否则提示无法显示在象棋 App 上层</string>
+    <string name="perm_notification">通知权限</string>
+    <string name="perm_notification_desc">用于显示常驻通知与状态</string>
+    <string name="perm_battery">后台运行白名单</string>
+    <string name="perm_battery_desc">必须设为「无限制」，否则切到象棋 App 后会被系统杀掉</string>
+    <string name="action_grant">去开启</string>
+    <string name="action_granted">已开启</string>
+    <string name="action_skip">可跳过</string>
+
+    <string name="card_setup">② 标定棋盘</string>
+    <string name="setup_hint">先在象棋 App 里进入对局、确保棋盘完整显示且处于开局状态，再点下面按钮框住棋盘四角。每个象棋 App 只需标定一次。</string>
+    <string name="action_calibrate">标定棋盘四角</string>
+
+    <string name="card_run">③ 开始辅助</string>
+    <string name="action_start">启动悬浮窗辅助</string>
+    <string name="action_stop">停止</string>
+    <string name="action_keep">设好后点这里启动</string>
+
+    <string name="status_title">运行状态</string>
+    <string name="status_idle">未启动</string>
+
+    <string name="card_help">使用说明</string>
+    <string name="help_text">1. 打开象棋 App，进入对局，让棋盘完整显示在屏幕上。\n2. 回到本 App，点「标定棋盘四角」，拖动四个角点框住棋盘的四个角（最外圈交叉点），选择己方颜色，确认。\n3. 回到本 App，点「启动悬浮窗辅助」，在系统弹窗里允许「开始录制或投放」。\n4. 切回象棋 App 开始下棋。悬浮窗会自动识别局势：对手走完一步后，它会给出建议。\n5. 你照着建议在象棋 App 里手动落子即可，它会继续监控。\n\n注意：本工具只提供建议，不会代替你落子。请遵守游戏平台的使用条款，建议仅在人机对战或练习模式中使用。</string>
+
+    <string name="abort_abi">这台手机不是 64 位 ARM 架构，当前版本暂不支持。请把手机型号反馈给开发者以补编对应架构的引擎。</string>
+
+    <string name="notif_channel_name">辅助运行中</string>
+    <string name="notif_title">象棋助手正在运行</string>
+    <string name="notif_text">正在监控棋局并给出建议</string>
+
+    <string name="overlay_title">象棋助手</string>
+    <string name="overlay_waiting">等待棋局…</string>
+    <string name="overlay_opponent">对手</string>
+    <string name="overlay_suggest">建议你走</string>
+    <string name="overlay_btn_calibrate">标定</string>
+    <string name="overlay_btn_pause">暂停</string>
+    <string name="overlay_btn_resume">继续</string>
+    <string name="overlay_btn_collapse">收起</string>
+    <string name="overlay_btn_close">关闭</string>
+
+    <string name="calib_instruction">拖动 4 个角点，框住棋盘最外圈的四个交叉点</string>
+    <string name="calib_bottom_red">我方是红方（红在下）</string>
+    <string name="calib_bottom_black">我方是黑方（黑在下）</string>
+    <string name="calib_recapture">重新截图</string>
+    <string name="calib_confirm">确认标定</string>
+    <string name="calib_need_frame">还没有截到画面，请先启动辅助服务</string>
+    <string name="calib_ok">标定成功，已保存模板</string>
+    <string name="calib_zoom_hint">双指缩放 / 拖动查看细节</string>
+
+    <string name="toast_need_overlay">请先开启悬浮窗权限</string>
+    <string name="toast_started">已启动，切到象棋 App 即可</string>
+    <string name="toast_error">出错了：%1$s</string>
 </resources>
