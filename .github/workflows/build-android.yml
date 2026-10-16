@@ -97,16 +97,24 @@ jobs:
           cp "$DBG" out/xiangqi-overlay-debug.apk
           echo "=== 产出 ==="
           ls -lh out/
+          APK=out/xiangqi-overlay-release.apk
           if command -v apksigner >/dev/null 2>&1; then
-            echo "=== 签名校验 ==="
-            apksigner verify --print-certs out/xiangqi-overlay-release.apk | head -10
-            # 记录签名指纹：若各次构建的指纹变了，说明签名证书被重新生成过，
-            # 这种包在手机上会因签名不一致而装不上（旧版原地不动 → 用户以为没更新）。
-            FP=$(apksigner verify --print-certs out/xiangqi-overlay-release.apk \
-                 | grep -i "SHA-256 digest" | head -1 | awk '{print $NF}')
-            echo "SIGN_SHA256=$FP" >> $GITHUB_ENV
-            echo "APK 签名指纹：$FP"
+            echo "=== 签名校验 ===" | tee -a ../ci-build.log
+            apksigner verify --print-certs "$APK" 2>&1 | head -10 | tee -a ../ci-build.log
+          else
+            echo "=== 未找到 apksigner，改用 keytool ===" | tee -a ../ci-build.log
           fi
+          # 记录签名指纹：若各次构建的指纹变了，说明签名证书被重新生成过，
+          # 这种包在手机上会因签名不一致而装不上（旧版原地不动 → 用户以为没更新）。
+          # 两种取法依次尝试，避免工具缺失导致这一项变空。
+          FP=$(apksigner verify --print-certs "$APK" 2>/dev/null \
+               | grep -i "SHA-256 digest" | head -1 | sed -E 's/.*:[[:space:]]*//' | tr -d '\r')
+          if [ -z "$FP" ]; then
+            FP=$(keytool -printcert -jarfile "$APK" 2>/dev/null \
+                 | grep -i "SHA256:" | head -1 | sed -E 's/.*:[[:space:]]*//' | tr -d '\r')
+          fi
+          echo "SIGN_SHA256=$FP" >> $GITHUB_ENV
+          echo "APK 签名指纹：${FP:-（未能取得，检查上面的签名校验输出）}" | tee -a ../ci-build.log
 
       - name: Read app version
         run: |
