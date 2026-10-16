@@ -45,6 +45,25 @@ public final class BoardProfile {
     public final Map<String, List<GrayImage>> pieceTemplates = new LinkedHashMap<>();
     public final List<GrayImage> emptyTemplates = new ArrayList<>();
 
+    /**
+     * v2.2：交叉点「有没有子」的线性判别模型。
+     * <p>
+     * 为什么需要它：旧做法是拿每个点与「平均空位模板」比相似度，靠 0.95 阈值判空。
+     * 但新皮肤（JJ象棋「立体瓷砖」棋盘）每格都带浮雕边、明暗纹理各异，空位与非空位
+     * 的相似度区间直接重叠（实测空格 0.19~0.96、有子 ≤0.42），阈值怎么调都会误判，
+     * 表现就是「棋子数量不合法」。改为在标定时从真实像素里学一个二维线性判别：
+     * <pre>
+     *   feature = (中心窗口平均亮度, 中心窗口平均 R-B)
+     *   有子  <=>  occW0 * f0 + occW1 * f1 >= occThreshold
+     * </pre>
+     * 真机截图实测：有子投影 1.8~9.0、空格 -4.7~-3.5，零误判，且网格整体偏移 8px
+     * 仍然零误判（比像素级 NCC 稳得多）。
+     */
+    public double occW0;
+    public double occW1;
+    public double occThreshold;
+    public boolean occReady;
+
     public boolean isCalibrated() {
         return calibratedAt > 0 && !pieceTemplates.isEmpty() && !emptyTemplates.isEmpty();
     }
@@ -55,6 +74,8 @@ public final class BoardProfile {
         }
         pieceTemplates.clear();
         emptyTemplates.clear();
+        occReady = false;
+        occW0 = occW1 = occThreshold = 0;
         calibratedAt = 0;
     }
 
@@ -129,6 +150,7 @@ public final class BoardProfile {
             o.put("calibratedAt", calibratedAt);
             o.put("pieceFiles", new JSONArray(pieceFiles));
             o.put("emptyFiles", new JSONArray(emptyFiles));
+            o.put("occ", toJSONArray(new float[]{(float) occW0, (float) occW1, (float) occThreshold}));
 
             DataOutputStream out = new DataOutputStream(
                     new BufferedOutputStream(new FileOutputStream(new File(d, "profile.json"))));
@@ -164,6 +186,14 @@ public final class BoardProfile {
             readInto(o.optJSONArray("turnTop"), turnTop);
             readInto(o.optJSONArray("turnBottom"), turnBottom);
             calibratedAt = o.optLong("calibratedAt", 0);
+            // v2.2：占用模型（旧存档没有这一项 → occReady=false，自动退回旧做法）
+            JSONArray occ = o.optJSONArray("occ");
+            if (occ != null && occ.length() >= 3) {
+                occW0 = occ.optDouble(0, 0);
+                occW1 = occ.optDouble(1, 0);
+                occThreshold = occ.optDouble(2, 0);
+                occReady = Math.abs(occW0) + Math.abs(occW1) > 1e-6;
+            }
 
             JSONArray pf = o.optJSONArray("pieceFiles");
             if (pf != null) {

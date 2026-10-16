@@ -66,7 +66,11 @@ public final class BoardAutoDetect {
     public static float[] detect(GrayImage gray) {
         try {
             Grid g = search(gray, null);
-            return g == null ? null : g.toCorners(gray.width, gray.height);
+            if (g == null) {
+                return null;
+            }
+            g = refineLines(gray, g);      // v2.2：列方向亚像素精修
+            return g.toCorners(gray.width, gray.height);
         } catch (Throwable t) {
             return null;   // 任何意外都不能拖垮识别循环
         }
@@ -93,13 +97,108 @@ public final class BoardAutoDetect {
                 return null;
             }
             Grid g = search(gray, new double[]{L0, T0, cw0, ch0});
-            return g == null ? null : g.toCorners(w, h);
+            if (g == null) {
+                return null;
+            }
+            g = refineLines(gray, g);      // v2.2：列方向亚像素精修
+            return g.toCorners(w, h);
         } catch (Throwable t) {
             return null;
         }
     }
 
     // ------------------------------------------------------------ 主流程
+
+    /**
+     * v2.2：网格线亚像素精修（只精修列方向 L/cw）。
+     * <p>
+     * 行指纹法给出的 T/ch 已经很准（真机截图实测与真值差 2.7px），但列方向有累积
+     * 漂移：实测左端偏 6.6px、右端几乎为 0，箭头的「差一点」就来自这里——粗搜索
+     * 的 cw 误差被 8 个格距放大。这里在 row1~row3 之间的横带（该带基本无棋子）做
+     * 灰度投影，对 9 条竖线各在预测位置 ±0.32 格内找最暗点，抛物线亚像素修正后
+     * 做一次最小二乘拟合，把 L/cw 收到 1px 级。对比度不足（被棋子遮住）或拟合跑飞
+     * 时保守放弃，沿用粗定位结果。
+     */
+    private static Grid refineLines(GrayImage gray, Grid g) {
+        final int W = gray.width;
+        final int H = gray.height;
+        int y0 = (int) Math.max(1, Math.round(g.T + 0.55 * g.ch));
+        int y1 = (int) Math.min(H - 2, Math.round(g.T + 2.45 * g.ch));
+        if (y1 - y0 < 8 || g.cw < 8) {
+            return g;
+        }
+        final GrayImage b = blur3(gray);
+        final double[] dark = new double[W];
+        for (int x = 1; x < W - 1; x++) {
+            long sum = 0;
+            for (int y = y0; y <= y1; y++) {
+                sum += 255 - b.data[y * W + x];
+            }
+            dark[x] = sum / (double) (y1 - y0 + 1);
+        }
+        final double[] sorted = new double[W - 2];
+        System.arraycopy(dark, 1, sorted, 0, W - 2);
+        java.util.Arrays.sort(sorted);
+        final double median = sorted[sorted.length / 2];
+
+        final double[] xs = new double[9];
+        final boolean[] ok = new boolean[9];
+        int found = 0;
+        for (int i = 0; i < 9; i++) {
+            double pred = g.L + i * g.cw;
+            int lo = (int) Math.max(2, Math.round(pred - 0.32 * g.cw));
+            int hi = (int) Math.min(W - 3, Math.round(pred + 0.32 * g.cw));
+            int bi = -1;
+            double bk = -1e9;
+            for (int x = lo; x <= hi; x++) {
+                if (dark[x] > bk) {
+                    bk = dark[x];
+                    bi = x;
+                }
+            }
+            if (bi < 0 || bk - median < 12) {
+                continue;      // 该列线被棋子盖住 / 对比度不足
+            }
+            double ym = dark[bi - 1];
+            double yc = dark[bi];
+            double yp = dark[bi + 1];
+            double den = ym - 2 * yc + yp;
+            double off = Math.abs(den) > 1e-6 ? (ym - yp) / (2 * den) : 0;
+            if (off > 0.5) {
+                off = 0.5;
+            } else if (off < -0.5) {
+                off = -0.5;
+            }
+            xs[i] = bi + off;
+            ok[i] = true;
+            found++;
+        }
+        if (found < 6) {
+            return g;
+        }
+        double sx = 0, sy = 0, sxx = 0, sxy = 0;
+        for (int i = 0; i < 9; i++) {
+            if (!ok[i]) {
+                continue;
+            }
+            sx += i;
+            sy += xs[i];
+            sxx += i * (double) i;
+            sxy += i * xs[i];
+        }
+        double denom = found * sxx - sx * sx;
+        if (Math.abs(denom) < 1e-6) {
+            return g;
+        }
+        double cw2 = (found * sxy - sx * sy) / denom;
+        double L2 = (sy - cw2 * sx) / found;
+        // 跑飞保护：与粗定位差太多说明这一帧有遮挡，保守不采用
+        if (cw2 < 0.85 * g.cw || cw2 > 1.18 * g.cw
+                || Math.abs(L2 - g.L) > 0.4 * g.cw) {
+            return g;
+        }
+        return new Grid(L2, g.T, cw2, g.ch);
+    }
 
     /**
      * @param near null=全局搜索；否则 {L,T,cw,ch} 表示只在用户粗略估计附近找

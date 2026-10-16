@@ -156,7 +156,7 @@ public final class XiangqiRecognizer {
         }
 
         char[][] raw = new char[Position.ROWS][Position.COLS];
-        double confidence = classifyBoard(canonical, raw);
+        double confidence = classifyBoard(canonical, frame, raw);
         // v1.8：红黑改由像素颜色决定（灰度 NCC 分不清 炮/砲 这类同形异色字）
         applyColorCorrection(frame, raw);
         r.confidence = confidence;
@@ -186,6 +186,7 @@ public final class XiangqiRecognizer {
         if (violation != null) {
             r.seriousMisread = true;
             reject(r, "棋子数量不合法（" + violation + "，颜色校正:" + lastColorCorrInfo
+                    + "，占用模型:" + occModelInfo
                     + "）。多半有东西挡住了棋盘边缘——如本助手面板或箭头，点「收起」或稍等 1 秒会自动让开");
             return r;
         }
@@ -302,24 +303,59 @@ public final class XiangqiRecognizer {
 
     /** 返回整体置信度，同时把识别出的棋盘写进 out。 */
     private double classifyBoard(GrayImage canonical, char[][] out) {
+        return classifyBoard(canonical, null, out);
+    }
+
+    /**
+     * v2.2：判空改为「颜色特征线性判别」优先。
+     * <p>
+     * 旧做法把「空位模板」当成一个类别参与 NCC 竞争，靠 0.95 阈值判空。实测在
+     * JJ象棋「立体瓷砖」皮肤上完全失效（空格 NCC 低至 0.19，与有子格区间重叠），
+     * 一帧里会出现 89/90 个点被判有子 → 触发「棋子数量不合法」。
+     * 现在先问 {@code profile} 里学好的占用模型（亮度 + R-B 双特征），确认是空位
+     * 就直接判空、不再做模板比对（顺带省掉一半匹配开销）；只有确认有子时才去比
+     * 棋子模板。模型不可用（旧存档/无彩色帧）时自动退回原来的做法。
+     */
+    private double classifyBoard(GrayImage canonical, Frame frame, char[][] out) {
         double total = 0;
         int n = 0;
         List<GrayImage> empties = profile.emptyTemplates;
+        boolean useOcc = profile.occReady && frame != null && frame.argb != null
+                && canonicalToScreen != null;
+        float occHalf = useOcc ? occupancyHalf(frame) : 0;
+        if (useOcc && occHalf < 4) {
+            useOcc = false;
+        }
 
         for (int row = 0; row < Position.ROWS; row++) {
             for (int col = 0; col < Position.COLS; col++) {
                 GrayImage patch = preparePatch(canonical, col, row);
+
+                if (useOcc) {
+                    float[] sp = canonicalToScreenPt(col * CELL, row * CELL);
+                    double[] f = sp == null ? null : sampleOccFeature(frame, sp[0], sp[1], occHalf);
+                    if (f != null
+                            && profile.occW0 * f[0] + profile.occW1 * f[1] < profile.occThreshold) {
+                        out[row][col] = Position.EMPTY;
+                        total += 1.0;      // 颜色判空非常稳，直接给满分置信
+                        n++;
+                        continue;
+                    }
+                }
+
                 char bestPiece = Position.EMPTY;
                 double best = -1, second = -1;
 
-                for (int i = 0; i < empties.size(); i++) {
-                    double s = ImageOps.ncc(patch, empties.get(i));
-                    if (s > best) {
-                        second = best;
-                        best = s;
-                        bestPiece = Position.EMPTY;
-                    } else if (s > second) {
-                        second = s;
+                if (!useOcc) {
+                    for (int i = 0; i < empties.size(); i++) {
+                        double s = ImageOps.ncc(patch, empties.get(i));
+                        if (s > best) {
+                            second = best;
+                            best = s;
+                            bestPiece = Position.EMPTY;
+                        } else if (s > second) {
+                            second = s;
+                        }
                     }
                 }
                 for (Map.Entry<String, List<GrayImage>> e : profile.pieceTemplates.entrySet()) {
@@ -505,6 +541,138 @@ public final class XiangqiRecognizer {
         return m > 0 ? sum / m : Double.NaN;
     }
 
+    /** 占用模型的诊断信息（写入报错后缀，便于远程判断版本行为）。 */
+    public volatile String occModelInfo = "未学习";
+
+    /**
+     * v2.2：标定时从真实像素学习「有子/空位」的线性判别模型。
+     * <p>
+     * 用开局先验（32 个点有子、58 个点为空）当标注，采样每个交叉点中心窗口的两个
+     * 特征：平均亮度、平均 R-B。用 Fisher 线性判别（类均值差 / 类内方差和）得到
+     * 权重与阈值，落在两个类均值中间。真机截图实测零误判，且对网格偏移 8px 免疫。
+     *
+     * @return 是否成功学到模型
+     */
+    private boolean learnOccupancyModel(BoardProfile target, Frame frame) {
+        target.occReady = false;
+        if (frame == null || frame.argb == null || canonicalToScreen == null) {
+            occModelInfo = "未学习(无彩色帧)";
+            return false;
+        }
+        float half = occupancyHalf(frame);
+        if (half < 4) {
+            occModelInfo = String.format("未学习(窗口过小 %.1f)", half);
+            return false;
+        }
+
+        double[][] sum = new double[2][2];
+        double[][] sq = new double[2][2];
+        int[] cnt = new int[2];
+        for (int r = 0; r < Position.ROWS; r++) {
+            for (int c = 0; c < Position.COLS; c++) {
+                float[] sp = canonicalToScreenPt(c * CELL, r * CELL);
+                if (sp == null) {
+                    continue;
+                }
+                double[] f = sampleOccFeature(frame, sp[0], sp[1], half);
+                if (f == null) {
+                    continue;
+                }
+                int k = startReference.cells[r][c] == Position.EMPTY ? 1 : 0;
+                for (int j = 0; j < 2; j++) {
+                    sum[k][j] += f[j];
+                    sq[k][j] += f[j] * f[j];
+                }
+                cnt[k]++;
+            }
+        }
+        if (cnt[0] < 8 || cnt[1] < 8) {
+            occModelInfo = String.format("未学习(样本不足 %d/%d)", cnt[0], cnt[1]);
+            return false;
+        }
+
+        double[] mOcc = new double[2];
+        double[] mEmp = new double[2];
+        double[] vOcc = new double[2];
+        double[] vEmp = new double[2];
+        double w0 = 0;
+        double w1 = 0;
+        for (int j = 0; j < 2; j++) {
+            mOcc[j] = sum[0][j] / cnt[0];
+            mEmp[j] = sum[1][j] / cnt[1];
+            vOcc[j] = Math.max(0, sq[0][j] / cnt[0] - mOcc[j] * mOcc[j]);
+            vEmp[j] = Math.max(0, sq[1][j] / cnt[1] - mEmp[j] * mEmp[j]);
+            double denom = vOcc[j] + vEmp[j];
+            double wj = (mOcc[j] - mEmp[j]) / (denom < 1e-3 ? 1e-3 : denom);
+            if (j == 0) {
+                w0 = wj;
+            } else {
+                w1 = wj;
+            }
+        }
+        // 投影后两类中心之间取中点作阈值
+        double t = (w0 * (mOcc[0] + mEmp[0]) + w1 * (mOcc[1] + mEmp[1])) / 2.0;
+        double sepOcc = w0 * mOcc[0] + w1 * mOcc[1] - t;
+        double sepEmp = t - (w0 * mEmp[0] + w1 * mEmp[1]);
+        if (Math.abs(sepOcc) < 1e-3 || Math.abs(sepEmp) < 1e-3) {
+            occModelInfo = "未学习(两类不可分)";
+            return false;
+        }
+        target.occW0 = w0;
+        target.occW1 = w1;
+        target.occThreshold = t;
+        target.occReady = true;
+        occModelInfo = String.format("生效 亮度%.0f/%.0f R-B%.0f/%.0f",
+                mOcc[0], mEmp[0], mOcc[1], mEmp[1]);
+        return true;
+    }
+
+    /** 占用采样窗口半径（像素）：格子的 30%，与 applyColorCorrection 同一套换算。 */
+    private float occupancyHalf(Frame frame) {
+        if (profile == null) {
+            return 0;
+        }
+        double[] corners = profile.absoluteCorners(frame.width, frame.height);
+        double minX = Math.min(Math.min(corners[0], corners[2]), Math.min(corners[4], corners[6]));
+        double maxX = Math.max(Math.max(corners[0], corners[2]), Math.max(corners[4], corners[6]));
+        double minY = Math.min(Math.min(corners[1], corners[3]), Math.min(corners[5], corners[7]));
+        double maxY = Math.max(Math.max(corners[1], corners[3]), Math.max(corners[5], corners[7]));
+        double cellW = (maxX - minX) / 8.0;
+        double cellH = (maxY - minY) / 9.0;
+        return (float) (0.30 * Math.min(cellW, cellH));
+    }
+
+    /**
+     * 采样一个交叉点中心窗口的两个特征 {平均亮度, 平均 R-B}；失败返回 null。
+     * 中心 60% 窗口落在棋子圆盘内部（棋子直径≈格子 87%），所以几乎不受棋盘纹理影响。
+     */
+    private double[] sampleOccFeature(Frame f, double cx, double cy, float half) {
+        int x0 = Math.max(0, (int) Math.floor(cx - half));
+        int y0 = Math.max(0, (int) Math.floor(cy - half));
+        int x1 = Math.min(f.width - 1, (int) Math.ceil(cx + half));
+        int y1 = Math.min(f.height - 1, (int) Math.ceil(cy + half));
+        int w = x1 - x0 + 1;
+        int hgt = y1 - y0 + 1;
+        int cnt = w * hgt;
+        if (cnt < 16) {
+            return null;
+        }
+        long sumLum = 0;
+        long sumRb = 0;
+        for (int y = y0; y <= y1; y++) {
+            int base = y * f.rowStride;
+            for (int x = x0; x <= x1; x++) {
+                int c = f.argb[base + x];
+                int R = (c >> 16) & 0xFF;
+                int G = (c >> 8) & 0xFF;
+                int B = c & 0xFF;
+                sumLum += (77 * R + 151 * G + 28 * B) >> 8;   // ≈0.299R+0.587G+0.114B，整数化
+                sumRb += R - B;
+            }
+        }
+        return new double[]{sumLum / (double) cnt, sumRb / (double) cnt};
+    }
+
     /** canonical 坐标 → 截屏帧坐标（不做红黑翻转）。 */
     private float[] canonicalToScreenPt(double cx, double cy) {
         double[] h = canonicalToScreen;
@@ -584,6 +752,9 @@ public final class XiangqiRecognizer {
         }
         target.emptyTemplates.addAll(dedupe(emptyPool));
 
+        // v2.2：从真实像素学「有子/空位」的颜色判别模型（比空位模板 NCC 稳得多）
+        learnOccupancyModel(target, frame);
+
         // 行棋方指示区（棋盘上方与下方各一条）
         int[] top = estimateTurnRegion(use, frame.width, frame.height, true);
         int[] bottom = estimateTurnRegion(use, frame.width, frame.height, false);
@@ -592,7 +763,7 @@ public final class XiangqiRecognizer {
 
         // 用真实识别结果自动判断屏幕下方是红还是黑（比让用户手选更可靠）
         char[][] raw = new char[Position.ROWS][Position.COLS];
-        classifyBoard(canonical, raw);
+        classifyBoard(canonical, frame, raw);
         applyColorCorrection(frame, raw);
         String detected = detectBottomSide(raw);
         target.bottomSide = detected != null ? detected
