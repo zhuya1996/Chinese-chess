@@ -80,6 +80,57 @@ public final class Perspective {
         return out;
     }
 
+    /**
+     * 彩色版透视变换（v2.3，供棋子识别 CNN 使用）。
+     * <p>
+     * 采样逻辑与 {@link #warp} 完全一致，只是对 RGB 三个通道分别做双线性插值。
+     *
+     * @param srcArgb 源图 ARGB 像素（行优先）
+     * @param out 复用的输出数组（长度须为 outW*outH，为 null 时新分配），存放 0xRRGGBB
+     */
+    public static int[] warpColor(int[] srcArgb, int srcW, int srcH, double[] H,
+                                  int outW, int outH, int[] out) {
+        if (out == null || out.length != outW * outH) {
+            out = new int[outW * outH];
+        }
+        for (int y = 0; y < outH; y++) {
+            for (int x = 0; x < outW; x++) {
+                double denom = H[6] * x + H[7] * y + H[8];
+                if (Math.abs(denom) < 1e-12) {
+                    continue;
+                }
+                double u = (H[0] * x + H[1] * y + H[2]) / denom;
+                double v = (H[3] * x + H[4] * y + H[5]) / denom;
+
+                int x0 = (int) Math.floor(u);
+                int y0 = (int) Math.floor(v);
+                if (x0 < 0 || y0 < 0 || x0 >= srcW - 1 || y0 >= srcH - 1) {
+                    continue;
+                }
+                double tx = u - x0;
+                double ty = v - y0;
+                int o = y * outW + x;
+                int c00 = srcArgb[y0 * srcW + x0];
+                int c10 = srcArgb[y0 * srcW + x0 + 1];
+                int c01 = srcArgb[(y0 + 1) * srcW + x0];
+                int c11 = srcArgb[(y0 + 1) * srcW + x0 + 1];
+                int rgb = 0;
+                for (int shift = 16; shift >= 0; shift -= 8) {   // R, G, B
+                    double v00 = (c00 >> shift) & 0xFF;
+                    double v10 = (c10 >> shift) & 0xFF;
+                    double v01 = (c01 >> shift) & 0xFF;
+                    double v11 = (c11 >> shift) & 0xFF;
+                    double top = v00 + (v10 - v00) * tx;
+                    double bottom = v01 + (v11 - v01) * tx;
+                    int ch = (int) Math.round(top + (bottom - top) * ty);
+                    rgb |= (ch < 0 ? 0 : ch > 255 ? 255 : ch) << shift;
+                }
+                out[o] = rgb;
+            }
+        }
+        return out;
+    }
+
     /** 高斯消元求解 8x8 线性方程组（带列主元）。 */
     private static double[] solve(double[][] a, double[] b) {
         int n = b.length;

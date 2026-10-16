@@ -223,6 +223,13 @@ public final class OverlayService extends Service {
         if (profile.isCalibrated()) {
             recognizer.setProfile(profile);
         }
+        // v2.3：棋子识别小模型（assets/ml_weights.bin）。加载失败不影响识别，
+        // 会自动退回模板匹配；状态记录在 recognizer.mlInfo 里，随报错后缀输出。
+        try {
+            recognizer.loadPieceNet(this);
+        } catch (Throwable t) {
+            recognizer.mlInfo = "未加载(" + t.getClass().getSimpleName() + ")";
+        }
     }
 
     @Override

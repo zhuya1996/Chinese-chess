@@ -187,6 +187,7 @@ public final class XiangqiRecognizer {
             r.seriousMisread = true;
             reject(r, "棋子数量不合法（" + violation + "，颜色校正:" + lastColorCorrInfo
                     + "，占用模型:" + occModelInfo
+                    + "，识别模型:" + mlInfo
                     + "）。多半有东西挡住了棋盘边缘——如本助手面板或箭头，点「收起」或稍等 1 秒会自动让开");
             return r;
         }
@@ -294,6 +295,32 @@ public final class XiangqiRecognizer {
         return new float[]{(float) x, (float) y};
     }
 
+    // ---------------------------------------------------------------- 小模型（v2.3）
+
+    /** 棋子识别 CNN（v2.3）。null 表示未加载，识别流程自动退回模板匹配。 */
+    private volatile PieceNet pieceNet;
+    /** 模型状态，随诊断/报错后缀输出。 */
+    public volatile String mlInfo = "未加载";
+    /** 彩色 canonical 复用缓冲。 */
+    private int[] colorCanon;
+    private final char[] cnnChar = new char[1];
+
+    /**
+     * 加载棋子识别小模型并跑内置自检。在服务启动时调用一次；
+     * 失败不影响现有识别（自动退回模板匹配），原因记录在 {@link #mlInfo}。
+     */
+    public void loadPieceNet(android.content.Context ctx) {
+        StringBuilder reason = new StringBuilder();
+        PieceNet net = PieceNet.load(ctx, reason);
+        if (net == null) {
+            mlInfo = "未加载(" + reason + ")";
+            return;
+        }
+        String st = PieceNet.selfTest(ctx, net);
+        pieceNet = net;
+        mlInfo = "生效 " + st;
+    }
+
     // ---------------------------------------------------------------- 分类
 
     private GrayImage preparePatch(GrayImage canonical, int col, int row) {
@@ -327,6 +354,23 @@ public final class XiangqiRecognizer {
             useOcc = false;
         }
 
+        // v2.3：彩色 canonical + 棋子识别小模型。模型未加载或取不到彩色帧时自动退回模板匹配。
+        // 离线实测（3 张真机开局截图，留一张图评估）：完美对准 CNN 0.910 vs 模板 0.885；
+        // 有错位/光照扰动时 CNN 0.850，模板崩到 0.449——这正是线上误判的主要来源。
+        boolean useCNN = pieceNet != null;
+        int[] colorC = null;
+        if (useCNN) {
+            double[] h = canonicalToScreen;
+            if (frame != null && frame.argb != null && h != null) {
+                colorC = Perspective.warpColor(frame.argb, frame.width, frame.height,
+                        h, BOARD_W, BOARD_H, colorCanon);
+                colorCanon = colorC;
+            }
+            if (colorC == null) {
+                useCNN = false;
+            }
+        }
+
         for (int row = 0; row < Position.ROWS; row++) {
             for (int col = 0; col < Position.COLS; col++) {
                 GrayImage patch = preparePatch(canonical, col, row);
@@ -341,6 +385,18 @@ public final class XiangqiRecognizer {
                         n++;
                         continue;
                     }
+                }
+
+                if (useCNN) {
+                    float conf = pieceNet.classify(colorC, BOARD_W, BOARD_H,
+                            col * CELL, row * CELL, cnnChar);
+                    if (cnnChar[0] != Position.EMPTY || !useOcc) {
+                        out[row][col] = cnnChar[0];
+                        total += conf;
+                        n++;
+                        continue;
+                    }
+                    // 小模型判空但占用模型判有子：两者冲突，退回模板匹配保守处理
                 }
 
                 char bestPiece = Position.EMPTY;
