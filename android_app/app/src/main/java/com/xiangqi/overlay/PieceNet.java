@@ -136,13 +136,13 @@ public final class PieceNet {
             float sy = y0 + (oy + 0.5f) * scale - 0.5f;
             int yA = clamp((int) Math.floor(sy), 0, H - 1);
             int yB = clamp(yA + 1, 0, H - 1);
-            float ty = sy - Math.floor(sy);
+            float ty = sy - (float) Math.floor(sy);
             if (ty < 0) ty = 0;
             for (int ox = 0; ox < IN; ox++) {
                 float sx = x0 + (ox + 0.5f) * scale - 0.5f;
                 int xA = clamp((int) Math.floor(sx), 0, W - 1);
                 int xB = clamp(xA + 1, 0, W - 1);
-                float tx = sx - Math.floor(sx);
+                float tx = sx - (float) Math.floor(sx);
                 if (tx < 0) tx = 0;
                 int c00 = src[yA * W + xA], c10 = src[yA * W + xB];
                 int c01 = src[yB * W + xA], c11 = src[yB * W + xB];
